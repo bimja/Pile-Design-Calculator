@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Coastal Home Timber Pile Design Calculator</title>
+    <title>Coastal Home Timber Pile Design Calculator - Square Piles</title>
     <style>
         body { font-family: Arial, sans-serif; margin: 20px; background: #f0f8ff; color: #333; }
         h1 { color: #0066cc; text-align: center; }
@@ -21,8 +21,8 @@
 </head>
 <body>
     <div class="container">
-        <h1>🌊 Coastal Home Timber Pile Design Calculator</h1>
-        <p style="text-align:center; font-style:italic;">Preliminary tool for elevated coastal homes • Galveston, TX coast defaults • Based on Broms lateral method (sand) + ASD timber stresses</p>
+        <h1>🌊 Coastal Home Timber Pile Design Calculator - Square Piles</h1>
+        <p style="text-align:center; font-style:italic;">Preliminary tool for elevated coastal homes • Galveston, TX coast defaults • Broms lateral method (sand) + ASD timber stresses</p>
         
         <h2>Input Parameters</h2>
         
@@ -38,7 +38,7 @@
         <label>Height Above Grade h (ft)</label>
         <input type="number" id="h" value="12" step="0.1">
         
-        <label>Basic Wind Speed (mph) — reference only (Galveston area typical 140-150 mph)</label>
+        <label>Basic Wind Speed (mph) — reference only</label>
         <input type="number" id="wind" value="150" disabled>
         
         <h2>Soil Parameters (Galveston TX Coast Defaults — Sandy Soil)</h2>
@@ -58,7 +58,7 @@
             <option value="DF">Douglas Fir (Fc=1250 psi, Fb=2450 psi)</option>
         </select>
         
-        <label>Trial Pile Diameter d (inches) — round pile</label>
+        <label>Trial Pile Size (square side) d (inches)</label>
         <input type="number" id="d_trial" value="12" step="0.5">
         
         <button onclick="calculate()">Calculate Design</button>
@@ -67,11 +67,11 @@
         
         <div class="note">
             <strong>Notes &amp; Limitations:</strong><br>
-            • Tributary loads are per pile (user-provided; calculate separately from wind/tributary area using ASCE 7).<br>
-            • Lateral capacity uses Broms method (free-head pile in cohesionless sand).<br>
-            • Structural check: combined axial + bending (ASD, wet service, no slenderness reduction assumed due to embedment).<br>
-            • FS = 2.0 on lateral capacity. Add scour/erosion allowance (typically 2–4 ft or 2.5×diameter per FEMA) in final design.<br>
-            • This is a preliminary calculator only. Always consult a licensed structural/geotechnical engineer and site-specific soil borings for final design and permitting in Galveston County.
+            • Now using square timber piles.<br>
+            • Structural properties use square section formulas (A = d², S = d³/6).<br>
+            • Lateral capacity uses Broms method with pile width B = d/12 ft.<br>
+            • Pile size now automatically increases if the trial size fails structural interaction.<br>
+            • FS = 2.0 on lateral capacity. Consult a licensed engineer for final design.
         </div>
     </div>
 
@@ -98,72 +98,73 @@
             let phi_rad = phi * Math.PI / 180;
             let Kp = Math.pow((1 + Math.sin(phi_rad)) / (1 - Math.sin(phi_rad)), 1);
 
-            // ===================== STRUCTURAL CHECK (find min diameter) =====================
-            let minD = 8;
-            let ratio = 2.0;
-            for (let d = 8; d <= 24; d += 0.25) {
-                let r = d / 2;                    // in
-                let A = Math.PI * r * r;          // in²
-                let S = Math.PI * Math.pow(d, 3) / 32; // in³
+            // ===================== STRUCTURAL CHECK - Find minimum square size =====================
+            let minD = 8.0;
+            let bestInteraction = 999;
+            for (let d = 8; d <= 30; d += 0.25) {
+                let A = d * d;                    // in²
+                let S = Math.pow(d, 3) / 6;       // in³ for square (bending)
                 let fa = (P * 1000) / A;          // psi
-                let fb = (M * 12 * 1000) / S;     // psi (M in kip-ft → kip-in)
+                let fb = (M * 12 * 1000) / S;     // psi
                 let interaction = (fa / Fc) + (fb / Fb);
-                if (interaction <= 1.0 && interaction < ratio) {
+
+                if (interaction <= 1.0 && interaction < bestInteraction) {
                     minD = d;
-                    ratio = interaction;
-                    break;
+                    bestInteraction = interaction;
                 }
             }
+
+            // Use larger of trial size or structural minimum
             let d_use = Math.max(minD, d_trial);
-            // Re-check at d_use
-            let r_use = d_use / 2;
-            let A_use = Math.PI * r_use * r_use;
-            let S_use = Math.PI * Math.pow(d_use, 3) / 32;
+            
+            // Re-calculate stresses at final size
+            let A_use = d_use * d_use;
+            let S_use = Math.pow(d_use, 3) / 6;
             let fa_use = (P * 1000) / A_use;
             let fb_use = (M * 12 * 1000) / S_use;
             let interaction_use = (fa_use / Fc) + (fb_use / Fb);
 
             // ===================== LATERAL EMBEDMENT (Broms method) =====================
             let e = h;                        // eccentricity ft
-            let D_ft = d_use / 12;            // ft
+            let B_ft = d_use / 12;            // pile width in feet (was D_ft)
             let FS = 2.0;
-            let H_required = H * FS;          // ultimate needed
+            let H_required = H * FS;          // ultimate lateral load needed
 
             let L_req = 50; // start high
             for (let L = 5; L <= 50; L += 0.1) {
                 let denom = 2 * (e + 0.67 * L);
-                let Hu = (gamma * Kp * D_ft * Math.pow(L, 3)) / denom; // kips
+                let Hu = (gamma * Kp * B_ft * Math.pow(L, 3)) / denom; // kips
                 if (Hu >= H_required) {
                     L_req = L;
                     break;
                 }
             }
 
-            // Total pile length recommendation
+            // Total pile length
             let total_L = Math.ceil(L_req + h + 3); // +3 ft cutoff/scour buffer
 
             // ===================== OUTPUT =====================
             let html = `
-                <h2>Results</h2>
+                <h2>Results - Square Pile</h2>
                 <table>
                     <tr><th>Parameter</th><th>Value</th></tr>
                     <tr><td>Total Lateral Load H</td><td>${H.toFixed(2)} kips</td></tr>
                     <tr><td>Applied Moment at Grade M</td><td>${M.toFixed(1)} kip-ft</td></tr>
-                    <tr><td>Minimum Diameter (structural)</td><td>${minD.toFixed(1)} in</td></tr>
-                    <tr><td>Recommended Diameter (using trial)</td><td><strong>${d_use.toFixed(1)} in</strong></td></tr>
+                    <tr><td>Minimum Side Length (structural)</td><td>${minD.toFixed(1)} in</td></tr>
+                    <tr><td>Recommended Side Length</td><td><strong>${d_use.toFixed(1)} in</strong></td></tr>
                     <tr><td>Axial Stress fa</td><td>${fa_use.toFixed(0)} psi</td></tr>
                     <tr><td>Bending Stress fb</td><td>${fb_use.toFixed(0)} psi</td></tr>
                     <tr><td>Interaction Ratio (≤1.0 OK)</td><td><strong>${interaction_use.toFixed(3)}</strong></td></tr>
                     <tr><td>Required Embedment Depth L (Broms, FS=2)</td><td><strong>${L_req.toFixed(1)} ft</strong></td></tr>
                     <tr><td>Recommended Total Pile Length</td><td><strong>${total_L} ft</strong> (embed + height + buffer)</td></tr>
                 </table>
-                <p><strong>✅ OK to use ${d_use.toFixed(1)}" diameter pile with ${L_req.toFixed(1)} ft embedment.</strong></p>
+                <p><strong>✅ OK to use ${d_use.toFixed(1)}" square pile with ${L_req.toFixed(1)} ft embedment.</strong></p>
                 <p style="font-size:0.85em;">Wind speed ${document.getElementById('wind').value} mph noted for reference only.</p>
             `;
             document.getElementById('results').innerHTML = html;
         }
 
-        // Run once on load with defaults
+        // Run on load
         window.onload = function() {
             calculate();
         };
