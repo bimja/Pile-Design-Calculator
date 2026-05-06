@@ -4,19 +4,21 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Coastal Home Timber Pile Design Calculator - Square Piles</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <style>
         body { font-family: Arial, sans-serif; margin: 20px; background: #f0f8ff; color: #333; }
         h1 { color: #0066cc; text-align: center; }
         .container { max-width: 900px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 0 15px rgba(0,0,0,0.1); }
         label { display: block; margin: 10px 0 5px; font-weight: bold; }
         input, select { width: 100%; padding: 8px; margin-bottom: 15px; border: 1px solid #ccc; border-radius: 5px; }
-        button { background: #0066cc; color: white; padding: 12px 20px; border: none; border-radius: 5px; font-size: 1.1em; cursor: pointer; }
+        button { background: #0066cc; color: white; padding: 12px 20px; border: none; border-radius: 5px; font-size: 1.1em; cursor: pointer; margin-right: 10px; }
         button:hover { background: #0055aa; }
         #results { margin-top: 30px; padding: 20px; background: #e6f0ff; border-radius: 8px; }
         table { width: 100%; border-collapse: collapse; margin: 15px 0; }
         th, td { border: 1px solid #0066cc; padding: 10px; text-align: center; }
         th { background: #0066cc; color: white; }
         .note { font-size: 0.9em; color: #555; margin-top: 20px; border-top: 1px solid #ccc; padding-top: 10px; }
+        .buttons { margin: 15px 0; }
     </style>
 </head>
 <body>
@@ -57,22 +59,25 @@
         
         <label>Trial Pile Size (square) d (inches)</label>
         <input type="number" id="d_trial" value="12" step="0.5">
-        
-        <button onclick="calculate()">Calculate Design</button>
+
+        <div class="buttons">
+            <button onclick="calculate()">Calculate Design</button>
+            <button onclick="exportToPDF()" style="background:#28a745;">📄 Export to PDF</button>
+        </div>
         
         <div id="results"></div>
         
         <div class="note">
             <strong>Notes:</strong><br>
             • You can now set your desired embedment depth.<br>
-            • The calculator will automatically increase pile size if needed to meet BOTH structural and lateral (Broms) requirements for your chosen embedment.<br>
+            • The calculator will automatically increase pile size if needed.<br>
             • FS = 2.0 on lateral capacity.
         </div>
     </div>
 
     <script>
         function calculate() {
-            // Inputs
+            // ... [All your existing calculation code remains unchanged] ...
             let P = parseFloat(document.getElementById('P').value) || 0;
             let Hx = parseFloat(document.getElementById('Hx').value) || 0;
             let Hy = parseFloat(document.getElementById('Hy').value) || 0;
@@ -84,7 +89,7 @@
             let d_trial = parseFloat(document.getElementById('d_trial').value) || 12;
 
             let H = Math.sqrt(Hx*Hx + Hy*Hy);
-            let M = H * h;                    // kip-ft at grade
+            let M = H * h;
 
             let Fc = (species === 'SP') ? 1200 : 1250;
             let Fb = (species === 'SP') ? 2400 : 2450;
@@ -92,13 +97,11 @@
             let phi_rad = phi * Math.PI / 180;
             let Kp = Math.pow((1 + Math.sin(phi_rad)) / (1 - Math.sin(phi_rad)), 1);
 
-            // ===================== FIND MINIMUM PILE SIZE =====================
             let minD_struct = 30;
             let minD_lateral = 30;
             let bestD = d_trial;
 
             for (let d = 8; d <= 36; d += 0.25) {
-                // Structural check
                 let A = d * d;
                 let S = Math.pow(d, 3) / 6;
                 let fa = (P * 1000) / A;
@@ -109,23 +112,20 @@
                     minD_struct = Math.min(minD_struct, d);
                 }
 
-                // Lateral check at fixed embedment
                 let B_ft = d / 12;
                 let e = h;
                 let denom = 2 * (e + 0.67 * L_embed);
                 let Hu = (gamma * Kp * B_ft * Math.pow(L_embed, 3)) / denom;
-                let H_allow = Hu / 2.0;   // FS=2
+                let H_allow = Hu / 2.0;
 
                 if (H_allow >= H) {
                     minD_lateral = Math.min(minD_lateral, d);
                 }
             }
 
-            // Final size = largest of trial, structural min, and lateral min
             let d_use = Math.max(d_trial, minD_struct, minD_lateral);
-            d_use = Math.ceil(d_use * 4) / 4;   // round up to nearest 0.25"
+            d_use = Math.ceil(d_use * 4) / 4;
 
-            // Recalculate values at final size
             let A_use = d_use * d_use;
             let S_use = Math.pow(d_use, 3) / 6;
             let fa_use = (P * 1000) / A_use;
@@ -139,7 +139,6 @@
 
             let total_L = Math.ceil(L_embed + h + 3);
 
-            // ===================== OUTPUT =====================
             let html = `
                 <h2>Results - Square Pile</h2>
                 <table>
@@ -148,7 +147,7 @@
                     <tr><td>Moment at Grade M</td><td>${M.toFixed(1)} kip-ft</td></tr>
                     <tr><td>Design Embedment L</td><td><strong>${L_embed.toFixed(1)} ft</strong></td></tr>
                     <tr><td>Minimum d (Structural)</td><td>${minD_struct.toFixed(1)} in</td></tr>
-                    <tr><td>Minimum d (Lateral @ L=${L_embed}ft)</td><td>${minD_lateral.toFixed(1)} in</td></tr>
+                    <tr><td>Minimum d (Lateral)</td><td>${minD_lateral.toFixed(1)} in</td></tr>
                     <tr><td><strong>Recommended Pile Size</strong></td><td><strong>${d_use.toFixed(2)}" × ${d_use.toFixed(2)}"</strong></td></tr>
                     <tr><td>Axial Stress fa</td><td>${fa_use.toFixed(0)} psi</td></tr>
                     <tr><td>Bending Stress fb</td><td>${fb_use.toFixed(0)} psi</td></tr>
@@ -159,6 +158,63 @@
                 ${interaction_use > 1 ? '<p style="color:red;"><strong>⚠ Increase embedment or pile size further.</strong></p>' : '<p><strong>✅ Design is acceptable.</strong></p>'}
             `;
             document.getElementById('results').innerHTML = html;
+        }
+
+        function exportToPDF() {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(18);
+            doc.text("Coastal Home Timber Pile Design", 105, 20, { align: "center" });
+
+            doc.setFontSize(12);
+            doc.text(`Date: ${new Date().toLocaleDateString()}`, 20, 35);
+
+            // Capture current inputs
+            const inputs = {
+                "Vertical Load P": document.getElementById('P').value + " kips",
+                "Lateral Load X": document.getElementById('Hx').value + " kips",
+                "Lateral Load Y": document.getElementById('Hy').value + " kips",
+                "Height Above Grade": document.getElementById('h').value + " ft",
+                "Embedment Depth": document.getElementById('L_embed').value + " ft",
+                "Soil γ'": document.getElementById('gamma').value + " pcf",
+                "Friction Angle φ": document.getElementById('phi').value + "°",
+                "Species": document.getElementById('species').value === "SP" ? "Southern Pine" : "Douglas Fir",
+                "Trial Size": document.getElementById('d_trial').value + "\""
+            };
+
+            let y = 50;
+            doc.setFont("helvetica", "bold");
+            doc.text("Input Parameters:", 20, y);
+            y += 10;
+            doc.setFont("helvetica", "normal");
+
+            for (let [key, value] of Object.entries(inputs)) {
+                doc.text(`${key}: ${value}`, 25, y);
+                y += 8;
+            }
+
+            // Add results section
+            y += 10;
+            doc.setFont("helvetica", "bold");
+            doc.text("Calculation Results:", 20, y);
+            y += 10;
+
+            const resultsHTML = document.getElementById('results').innerText || "Run Calculate first";
+            const lines = resultsHTML.split('\n').filter(line => line.trim() !== '');
+            
+            doc.setFont("helvetica", "normal");
+            for (let line of lines) {
+                if (y > 270) {
+                    doc.addPage();
+                    y = 20;
+                }
+                doc.text(line.trim(), 20, y);
+                y += 8;
+            }
+
+            doc.save("Pile_Design_Report.pdf");
         }
 
         window.onload = calculate;
