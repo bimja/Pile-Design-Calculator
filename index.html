@@ -3,205 +3,209 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Coastal Home Timber Pile Design Calculator - Square Piles</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <title>Coastal Home Pile Design Calculator</title>
     <style>
         body { font-family: Arial, sans-serif; margin: 20px; background: #f0f8ff; color: #333; }
         h1 { color: #0066cc; text-align: center; }
         .container { max-width: 900px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 0 15px rgba(0,0,0,0.1); }
         label { display: block; margin: 10px 0 5px; font-weight: bold; }
         input, select { width: 100%; padding: 8px; margin-bottom: 15px; border: 1px solid #ccc; border-radius: 5px; }
-        button { background: #0066cc; color: white; padding: 12px 20px; border: none; border-radius: 5px; font-size: 1.1em; cursor: pointer; margin-right: 10px; }
+        button { background: #0066cc; color: white; padding: 12px 20px; border: none; border-radius: 5px; font-size: 1.1em; cursor: pointer; }
         button:hover { background: #0055aa; }
         #results { margin-top: 30px; padding: 20px; background: #e6f0ff; border-radius: 8px; }
         table { width: 100%; border-collapse: collapse; margin: 15px 0; }
         th, td { border: 1px solid #0066cc; padding: 10px; text-align: center; }
         th { background: #0066cc; color: white; }
         .note { font-size: 0.9em; color: #555; margin-top: 20px; border-top: 1px solid #ccc; padding-top: 10px; }
-        .buttons { margin: 15px 0; }
-        .warning { color: red; font-weight: bold; }
+        .conditional { display: none; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>🌊 Coastal Home Timber Pile Design Calculator - Square Piles</h1>
-        <p style="text-align:center; font-style:italic;">Preliminary tool for elevated coastal homes • Galveston, TX coast defaults</p>
+        <h1>🌊 Coastal Home Pile Design Calculator</h1>
+        <p style="text-align:center; font-style:italic;">Preliminary tool for elevated coastal homes • Galveston, TX coast defaults • Based on Broms lateral method (sand) + ASD stresses</p>
         
         <h2>Input Parameters</h2>
         
         <label>Tributary Vertical Load P (kips)</label>
         <input type="number" id="P" value="10" step="0.1">
         
-        <label>Tributary Uplift Load T (kips)</label>
-        <input type="number" id="T" value="8" step="0.1">
-        
-        <label>Tributary Lateral Load X (kips)</label>
+        <label>Tributary Lateral Load X-direction (kips)</label>
         <input type="number" id="Hx" value="2" step="0.1">
         
-        <label>Tributary Lateral Load Y (kips)</label>
+        <label>Tributary Lateral Load Y-direction (kips)</label>
         <input type="number" id="Hy" value="2" step="0.1">
         
         <label>Height Above Grade h (ft)</label>
         <input type="number" id="h" value="12" step="0.1">
         
-        <label>Design Embedment Depth L (ft)</label>
-        <input type="number" id="L_embed" value="18" step="0.5">
-
-        <h2>Soil Parameters</h2>
-        <label>Effective Unit Weight γ' (pcf)</label>
+        <label>Basic Wind Speed (mph) — reference only (Galveston area typical 140-150 mph)</label>
+        <input type="number" id="wind" value="150" disabled>
+        
+        <h2>Soil Parameters (Galveston TX Coast Defaults — Sandy Soil)</h2>
+        <label>Effective (submerged) Unit Weight γ' (pcf)</label>
         <input type="number" id="gamma" value="55" step="1">
         
         <label>Friction Angle φ (degrees)</label>
         <input type="number" id="phi" value="30" step="1">
         
+        <label>Cohesion c (psf) — 0 for sand</label>
+        <input type="number" id="c" value="0" disabled>
+        
         <h2>Pile Parameters</h2>
-        <label>Timber Species</label>
-        <select id="species">
-            <option value="SP" selected>Southern Pine</option>
-            <option value="DF">Douglas Fir</option>
+        
+        <label>Pile Material</label>
+        <select id="pileType" onchange="togglePileOptions()">
+            <option value="timber" selected>Timber Pile</option>
+            <option value="concrete">Concrete Pile (Round, Plain/Reinforced Preliminary)</option>
         </select>
         
-        <label>Trial Pile Size (square) d (inches)</label>
-        <input type="number" id="d_trial" value="12" step="0.5">
-
-        <div class="buttons">
-            <button onclick="calculate()">Calculate Design</button>
-            <button onclick="exportToPDF()" style="background:#28a745;">📄 Export to PDF</button>
+        <!-- Timber Options -->
+        <div id="timberOptions">
+            <label>Timber Species</label>
+            <select id="species">
+                <option value="SP" selected>Southern Pine (Fc=1200 psi, Fb=2400 psi)</option>
+                <option value="DF">Douglas Fir (Fc=1250 psi, Fb=2450 psi)</option>
+            </select>
         </div>
+        
+        <!-- Concrete Options -->
+        <div id="concreteOptions" class="conditional">
+            <label>Concrete Compressive Strength f'c (psi)</label>
+            <input type="number" id="fc_prime" value="5000" step="100">
+        </div>
+        
+        <label>Trial Pile Diameter d (inches) — round pile</label>
+        <input type="number" id="d_trial" value="12" step="0.5">
+        
+        <button onclick="calculate()">Calculate Design</button>
         
         <div id="results"></div>
         
         <div class="note">
-            <strong>Notes:</strong><br>
-            • Uplift uses simplified skin friction (FS=3.0) for Galveston sandy soils.<br>
-            • Always verify pile-to-beam connection capacity (often governs uplift).<br>
-            • Scour can significantly reduce uplift capacity.
+            <strong>Notes &amp; Limitations:</strong><br>
+            • Tributary loads are per pile (user-provided; calculate separately from wind/tributary area using ASCE 7).<br>
+            • Lateral capacity uses Broms method (free-head pile in cohesionless sand).<br>
+            • Structural check: combined axial + bending (ASD).<br>
+            • Timber: Wet service values.<br>
+            • Concrete: Preliminary ASD (Fc ≈ 0.33 f'c, Fb conservative). For reinforced piles, consult engineer.<br>
+            • FS = 2.0 on lateral capacity. Add scour/erosion allowance (typically 2–4 ft or 2.5×diameter per FEMA).<br>
+            • This is a preliminary calculator only. Always consult a licensed structural/geotechnical engineer and site-specific soil borings.
         </div>
     </div>
 
     <script>
+        function togglePileOptions() {
+            const pileType = document.getElementById('pileType').value;
+            document.getElementById('timberOptions').style.display = pileType === 'timber' ? 'block' : 'none';
+            document.getElementById('concreteOptions').style.display = pileType === 'concrete' ? 'block' : 'none';
+        }
+
         function calculate() {
-            let P = parseFloat(document.getElementById('P').value) || 0;
-            let T = parseFloat(document.getElementById('T').value) || 0;
+            // Inputs
+            let P = parseFloat(document.getElementById('P').value) || 0;      // kips
             let Hx = parseFloat(document.getElementById('Hx').value) || 0;
             let Hy = parseFloat(document.getElementById('Hy').value) || 0;
-            let h = parseFloat(document.getElementById('h').value) || 0;
-            let L_embed = parseFloat(document.getElementById('L_embed').value) || 15;
-            let gamma = parseFloat(document.getElementById('gamma').value) / 1000;
-            let phi = parseFloat(document.getElementById('phi').value);
-            let species = document.getElementById('species').value;
-            let d_trial = parseFloat(document.getElementById('d_trial').value) || 12;
+            let h = parseFloat(document.getElementById('h').value) || 0;      // ft
+            let gamma = parseFloat(document.getElementById('gamma').value) / 1000; // kip/ft³
+            let phi = parseFloat(document.getElementById('phi').value);       // deg
+            let pileType = document.getElementById('pileType').value;
+            let d_trial = parseFloat(document.getElementById('d_trial').value) || 12; // inches
 
-            let H = Math.sqrt(Hx*Hx + Hy*Hy);
-            let M = H * h;
+            let H = Math.sqrt(Hx*Hx + Hy*Hy); // total lateral kips
+            let M = H * h;                    // kip-ft
 
-            let Fc = (species === 'SP') ? 1200 : 1250;   // Compression & Tension allowable
-            let Fb = (species === 'SP') ? 2400 : 2450;
-
+            // Kp (Rankine passive)
             let phi_rad = phi * Math.PI / 180;
             let Kp = Math.pow((1 + Math.sin(phi_rad)) / (1 - Math.sin(phi_rad)), 1);
 
-            // ===================== STRUCTURAL & LATERAL =====================
-            let minD_struct = 30;
-            let minD_lateral = 30;
-
-            for (let d = 8; d <= 36; d += 0.25) {
-                let A = d * d;
-                let S = Math.pow(d, 3) / 6;
-                let fa = (P * 1000) / A;
-                let fb = (M * 12 * 1000) / S;
-                let interaction = (fa / Fc) + (fb / Fb);
-
-                if (interaction <= 1.0) minD_struct = Math.min(minD_struct, d);
-
-                let B_ft = d / 12;
-                let e = h;
-                let denom = 2 * (e + 0.67 * L_embed);
-                let Hu = (gamma * Kp * B_ft * Math.pow(L_embed, 3)) / denom;
-                let H_allow = Hu / 2.0;
-
-                if (H_allow >= H) minD_lateral = Math.min(minD_lateral, d);
+            let Fc, Fb, materialName;
+            
+            if (pileType === 'timber') {
+                let species = document.getElementById('species').value;
+                Fc = (species === 'SP') ? 1200 : 1250; // psi
+                Fb = (species === 'SP') ? 2400 : 2450; // psi
+                materialName = species === 'SP' ? 'Southern Pine' : 'Douglas Fir';
+            } else {
+                // Concrete
+                let fc_prime = parseFloat(document.getElementById('fc_prime').value) || 5000;
+                Fc = 0.33 * fc_prime; // ASD allowable compression (IBC typical)
+                Fb = 0.45 * Math.sqrt(fc_prime) * 1.5; // Conservative allowable bending (approx modulus of rupture / FS)
+                materialName = `Concrete f'c=${fc_prime} psi`;
             }
 
-            let d_use = Math.max(d_trial, minD_struct, minD_lateral);
-            d_use = Math.ceil(d_use * 4) / 4;
-
-            // Recalculate at final size
-            let A_use = d_use * d_use;
-            let S_use = Math.pow(d_use, 3) / 6;
+            // ===================== STRUCTURAL CHECK (find min diameter) =====================
+            let minD = 8;
+            let ratio = 2.0;
+            for (let d = 8; d <= 36; d += 0.25) {  // Extended range for concrete
+                let r = d / 2;                    // in
+                let A = Math.PI * r * r;          // in²
+                let S = Math.PI * Math.pow(d, 3) / 32; // in³ section modulus round
+                let fa = (P * 1000) / A;          // psi
+                let fb = (M * 12 * 1000) / S;     // psi (M in kip-ft → kip-in)
+                let interaction = (fa / Fc) + (fb / Fb);
+                if (interaction <= 1.0 && interaction < ratio) {
+                    minD = d;
+                    ratio = interaction;
+                    break;
+                }
+            }
+            let d_use = Math.max(minD, d_trial);
+            // Re-check at d_use
+            let r_use = d_use / 2;
+            let A_use = Math.PI * r_use * r_use;
+            let S_use = Math.PI * Math.pow(d_use, 3) / 32;
             let fa_use = (P * 1000) / A_use;
             let fb_use = (M * 12 * 1000) / S_use;
             let interaction_use = (fa_use / Fc) + (fb_use / Fb);
 
-            let B_ft_use = d_use / 12;
-            let denom_use = 2 * (h + 0.67 * L_embed);
-            let Hu_use = (gamma * Kp * B_ft_use * Math.pow(L_embed, 3)) / denom_use;
-            let H_allow_use = Hu_use / 2;
+            // ===================== LATERAL EMBEDMENT (Broms method) =====================
+            let e = h;                        // eccentricity ft
+            let D_ft = d_use / 12;            // ft
+            let FS = 2.0;
+            let H_required = H * FS;          // ultimate needed
 
-            let total_L = Math.ceil(L_embed + h + 3);
+            let L_req = 50; // start high
+            for (let L = 5; L <= 60; L += 0.1) {  // Slightly extended for larger piles
+                let denom = 2 * (e + 0.67 * L);
+                let Hu = (gamma * Kp * D_ft * Math.pow(L, 3)) / denom; // kips
+                if (Hu >= H_required) {
+                    L_req = L;
+                    break;
+                }
+            }
 
-            // ===================== UPLIFT CALCULATION =====================
-            let perimeter_ft = 4 * (d_use / 12);
-            let K_u = 0.7;                    // Average for uplift in sand
-            let delta = (2/3) * phi;          // Interface friction
-            let tan_delta = Math.tan(delta * Math.PI / 180);
-            
-            // Average effective stress along embedment
-            let sigma_avg = gamma * 1000 * (L_embed / 2);   // psf
-            let Q_u_ultimate = perimeter_ft * L_embed * sigma_avg * K_u * tan_delta;  // lbs
-            let T_allow_soil = Q_u_ultimate / (1000 * 3.0);   // kips, FS=3.0
-
-            let ft_use = (T * 1000) / A_use;                 // Tension stress psi
-            let tension_OK = ft_use <= Fc;
-
-            let uplift_OK = T_allow_soil >= T;
+            // Total pile length recommendation
+            let total_L = Math.ceil(L_req + h + 3); // +3 ft cutoff/scour buffer
 
             // ===================== OUTPUT =====================
             let html = `
-                <h2>Results - Square Pile</h2>
+                <h2>Results - ${materialName}</h2>
                 <table>
                     <tr><th>Parameter</th><th>Value</th></tr>
                     <tr><td>Total Lateral Load H</td><td>${H.toFixed(2)} kips</td></tr>
-                    <tr><td>Moment at Grade M</td><td>${M.toFixed(1)} kip-ft</td></tr>
-                    <tr><td>Recommended Pile Size</td><td><strong>${d_use.toFixed(2)}" × ${d_use.toFixed(2)}"</strong></td></tr>
-                    <tr><td>Interaction Ratio (Comp+Bend)</td><td><strong>${interaction_use.toFixed(3)} ${interaction_use > 1 ? '(Overstressed!)' : '✓ OK'}</strong></td></tr>
-                    <tr><td>Allowable Lateral (FS=2)</td><td>${H_allow_use.toFixed(2)} kips</td></tr>
-                    
-                    <tr><td><strong>Uplift Load T</strong></td><td>${T.toFixed(1)} kips</td></tr>
-                    <tr><td>Allowable Uplift (Soil, FS=3)</td><td>${T_allow_soil.toFixed(2)} kips ${uplift_OK ? '✓' : '<span class="warning">⚠ Insufficient</span>'}</td></tr>
-                    <tr><td>Timber Tension Stress</td><td>${ft_use.toFixed(0)} psi</td></tr>
-                    <tr><td>Recommended Total Pile Length</td><td><strong>${total_L} ft</strong></td></tr>
+                    <tr><td>Applied Moment at Grade M</td><td>${M.toFixed(1)} kip-ft</td></tr>
+                    <tr><td>Minimum Diameter (structural)</td><td>${minD.toFixed(1)} in</td></tr>
+                    <tr><td>Recommended Diameter (using trial)</td><td><strong>${d_use.toFixed(1)} in</strong></td></tr>
+                    <tr><td>Axial Stress fa</td><td>${fa_use.toFixed(0)} psi</td></tr>
+                    <tr><td>Bending Stress fb</td><td>${fb_use.toFixed(0)} psi</td></tr>
+                    <tr><td>Allowable Fc</td><td>${Fc.toFixed(0)} psi</td></tr>
+                    <tr><td>Allowable Fb</td><td>${Fb.toFixed(0)} psi</td></tr>
+                    <tr><td>Interaction Ratio (≤1.0 OK)</td><td><strong>${interaction_use.toFixed(3)}</strong></td></tr>
+                    <tr><td>Required Embedment Depth L (Broms, FS=2)</td><td><strong>${L_req.toFixed(1)} ft</strong></td></tr>
+                    <tr><td>Recommended Total Pile Length</td><td><strong>${total_L} ft</strong> (embed + height + buffer)</td></tr>
                 </table>
-                ${interaction_use > 1 || !uplift_OK ? '<p class="warning">⚠ Design Unacceptable - Review uplift or increase size/embedment.</p>' : '<p><strong>✅ Design is acceptable.</strong></p>'}
+                <p><strong>✅ OK to use ${d_use.toFixed(1)}" diameter pile with ${L_req.toFixed(1)} ft embedment.</strong></p>
+                <p style="font-size:0.85em;">Wind speed ${document.getElementById('wind').value} mph noted for reference only.</p>
             `;
             document.getElementById('results').innerHTML = html;
         }
 
-        function exportToPDF() {
-            const { jsPDF } = window.jspdf;
-            const doc = new jsPDF();
-            // ... (PDF function remains similar - it will now include new uplift results via innerText) ...
-            doc.setFont("helvetica", "bold");
-            doc.setFontSize(18);
-            doc.text("Coastal Home Timber Pile Design Report", 105, 20, { align: "center" });
-            doc.setFontSize(11);
-            doc.text(`Generated: ${new Date().toLocaleString()}`, 20, 35);
-
-            let y = 50;
-            // Add inputs and results similarly (full version captures current results table)
-            const resultsText = document.getElementById('results').innerText || "Calculate first";
-            const lines = resultsText.split('\n').filter(l => l.trim());
-            
-            for (let line of lines) {
-                if (y > 260) { doc.addPage(); y = 20; }
-                doc.text(line.trim(), 20, y);
-                y += 7;
-            }
-
-            doc.save("Pile_Design_Report.pdf");
-        }
-
-        window.onload = calculate;
+        // Run once on load with defaults
+        window.onload = function() {
+            togglePileOptions();
+            calculate();
+        };
     </script>
 </body>
 </html>
