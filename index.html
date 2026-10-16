@@ -133,8 +133,16 @@
                 <div><label>Pile unit weight (pcf; blank = 50 timber / 150 concrete)</label><input type="number" id="pileUnitWt" value="" step="1"></div>
             </div>
 
-            <h3>Geotechnical (sand, effective stress)</h3>
+            <h3>Geotechnical</h3>
             <div class="grid2">
+                <div><label>Soil type</label>
+                    <select id="soilType">
+                        <option value="sand" selected>Sand / cohesionless (β = K tanδ, Nq, Broms sand)</option>
+                        <option value="clay">Clay / cohesive, undrained (α method, 9su, Broms clay)</option>
+                    </select></div>
+                <div><label>Clay: su at existing grade (psf)</label><input type="number" id="suTop" value="500" step="50"></div>
+                <div><label>Clay: su increase with depth (psf/ft)</label><input type="number" id="suGrad" value="0" step="5"></div>
+                <div><label>Clay: su cap (psf)</label><input type="number" id="suMax" value="2000" step="50"></div>
                 <div><label>Pile tip depth below existing grade (ft; blank = use required)</label><input type="number" id="Ltip" value="" step="0.1"></div>
                 <div><label>Depth to groundwater below grade dw (ft)</label><input type="number" id="dw" value="0" step="0.5"></div>
                 <div><label>Moist unit weight above water γm (pcf)</label><input type="number" id="gammaM" value="110" step="1"></div>
@@ -367,7 +375,7 @@
                 pileUnitWt: numVal('pileUnitWt', NaN),
                 Ltip: numVal('Ltip', NaN), dw: numVal('dw', 0), gammaM: numVal('gammaM', 110), delta: numVal('delta', NaN),
                 Kc: numVal('Kc', 1.0), Kt: numVal('Kt', 0.8), FSc: numVal('FSc', 2.5), FSt: numVal('FSt', 3.0), FSlat: numVal('FSlat', 2.0),
-                NqOv: numVal('NqOv', NaN),
+                NqOv: numVal('NqOv', NaN), soilType: strVal('soilType', 'sand') === 'clay' ? 'clay' : 'sand', suTop: numVal('suTop', 500), suGrad: numVal('suGrad', 0), suMax: numVal('suMax', 2000),
                 dfix: numVal('dfix', NaN), Ke: numVal('Ke', 2.1), topCond: strVal('topCond', 'free') === 'braced' ? 'braced' : 'free', KeBr: numVal('KeBr', 1.0), Ct: numVal('Ct', 1.0),
                 zone: ['AE', 'CA', 'VE'].indexOf(strVal('zone', 'none')) >= 0 ? strVal('zone', 'none') : 'none',
                 BFE: numVal('BFE', NaN), G: numVal('Gelev', NaN), Esw: numVal('Esw', NaN), V: numVal('Vel', NaN),
@@ -476,15 +484,50 @@
                 if (submerged || z >= inp.dw) return submerged ? gs * z : gm * inp.dw + gs * (z - inp.dw);
                 return gm * z;
             }
-            function skin(Le, K, submerged) {
+            const clay = inp.soilType === 'clay';
+            // undrained shear strength (ksf) at depth z below the current surface, drop = soil removed (scour/erosion)
+            function su(z, drop) { return Math.min(inp.suTop + inp.suGrad * (z + (drop || 0)), inp.suMax) / 1000; }
+            function suAvg(L, drop) { let s = 0, n = 0; for (let z = 0.05; z < L; z += 0.1) { s += su(z, drop); n++; } return n ? s / n : su(0, drop); }
+            function skin(Le, K, submerged, drop) {
                 let Q = 0; const dz = 0.05;
-                for (let z = dz / 2; z < Le; z += dz) Q += Math.min(K * sig(z, submerged) * tanD, api.fslim) * perft * dz;
+                for (let z = dz / 2; z < Le; z += dz) {
+                    if (clay) {   // API RP 2A alpha method: α = 0.5ψ^-0.5 (ψ ≤ 1), 0.5ψ^-0.25 (ψ > 1), α ≤ 1
+                        const c = su(z, drop), psi = c / Math.max(sig(z, submerged), 1e-6);
+                        const al = Math.min(1, psi <= 1 ? 0.5 / Math.sqrt(psi) : 0.5 / Math.pow(psi, 0.25));
+                        Q += al * c * perft * dz;
+                    } else Q += Math.min(K * sig(z, submerged) * tanD, api.fslim) * perft * dz;
+                }
                 return Q;
             }
-            function endBearing(Le, submerged) { return Math.min(Nq * sig(Le, submerged), api.qlim) * Aft; }
+            function endBearing(Le, submerged, drop) {
+                return clay ? 9 * su(Le, drop) * Aft : Math.min(Nq * sig(Le, submerged), api.qlim) * Aft;
+            }
+            // Broms short free-head pile in clay (top 1.5D ignored, 9 su D): returns required L for V, M at grade
+            function bromsClayL(V, M, FS, drop) {
+                V = Math.abs(V) * FS; M = Math.abs(M) * FS;
+                if (V < 1e-9 && M < 1e-9) return 0;
+                let L = 5;
+                for (let i = 0; i < 30; i++) {
+                    const c = suAvg(Math.max(L, 1.5 * bft + 1), drop);
+                    const f = V / (9 * c * bft);
+                    const Mmax = M + V * (1.5 * bft + 0.5 * f);
+                    const g = Math.sqrt(Mmax / (2.25 * c * bft));
+                    const Ln = 1.5 * bft + f + g;
+                    if (Math.abs(Ln - L) < 0.01) { L = Ln; break; }
+                    L = Ln;
+                }
+                return Math.min(L, 80);
+            }
 
             // Broms short free-head pile in sand: Hu = 0.5 γ' D L³ Kp / (e + L)
-            function broms(forces, FS) {
+            function broms(forces, FS, drop) {
+                if (clay) {
+                    const H = forces.reduce((s, f) => s + f.F, 0);
+                    const M0 = forces.reduce((s, f) => s + f.F * f.y, 0);
+                    if (H <= 1e-9) return { H: 0, M0: 0, e: 0, Lreq: 0, f: 0, Mmax: 0 };
+                    const c = su(1.5 * bft + 2, drop), f = H / (9 * c * bft);
+                    return { H, M0, e: M0 / H, Lreq: bromsClayL(H, M0, FS, drop), f, Mmax: M0 + H * (1.5 * bft + 0.5 * f) };
+                }
                 const H = forces.reduce((s, f) => s + f.F, 0);
                 const M0 = forces.reduce((s, f) => s + f.F * f.y, 0);
                 if (H <= 1e-9) return { H: 0, M0: 0, e: 0, Lreq: 0, f: 0, Mmax: 0 };
@@ -499,7 +542,8 @@
 
             // Broms equilibrium form, valid for any shear/moment pair at grade:
             // 0.5 γ' D Kp L³ ≥ FS (|V| L + |M|)   (equals Hu(e+L) form when M = V e)
-            function bromsVM(V, M, FS) {
+            function bromsVM(V, M, FS, drop) {
+                if (clay) return bromsClayL(V, M, FS, drop);
                 V = Math.abs(V); M = Math.abs(M);
                 if (V < 1e-9 && M < 1e-9) return 0;
                 for (let L = 0.5; L <= 80; L += 0.05) if (0.5 * gs * bft * Math.pow(L, 3) * Kp >= FS * (V * L + M)) return L;
@@ -570,10 +614,10 @@
                     const fl = forces.filter(f => f.y < top - 1e-6);       // flood loads on the pile shaft
                     const Wtop = forces.filter(f => f.y >= top - 1e-6).reduce((s, f) => s + f.F, 0);
                     const pr = propped(fl, top);
-                    const Lreq = bromsVM(pr.Vg, pr.Mg, inp.FSlat);
+                    const Lreq = bromsVM(pr.Vg, pr.Mg, inp.FSlat, drop);
                     br = { H: pr.Vg, M0: pr.Mg, e: 0, Lreq, f: 0, Mmax: pr.Mmax, Rtop: pr.R, Wtop };
                 } else {
-                    br = broms(forces, inp.FSlat);
+                    br = broms(forces, inp.FSlat, drop);
                     br.Rtop = 0; br.Wtop = 0;
                 }
                 const Ltip = isNaN(inp.Ltip) ? LtipDesign : inp.Ltip;
@@ -609,7 +653,7 @@
                 }
 
                 // geotechnical
-                const Qs_c = skin(Lav, inp.Kc, isF), Qb = endBearing(Lav, isF), Qs_t = skin(Lav, inp.Kt, isF);
+                const Qs_c = skin(Lav, inp.Kc, isF, drop), Qb = endBearing(Lav, isF, drop), Qs_t = skin(Lav, inp.Kt, isF, drop);
                 const Qa_c = (Qs_c + Qb) / inp.FSc, Qa_t = Qs_t / inp.FSt;
                 const T = Pc < 0 ? -Pc : 0;
                 return {
@@ -679,7 +723,7 @@
             let h = `<h2>Advanced Checks — ASCE 7-22 ASD Combinations</h2>
                 <p>Section ${inp.shape} ${inp.d}": A ${f2(res.sp.A, 1)} in², S ${f2(res.sp.S, 1)} in³, I ${f2(res.sp.I, 0)} in⁴, perimeter ${f2(res.sp.per, 1)} in.
                 ${t ? t.name + ': Fb ' + t.Fb + ', Fc ' + t.Fc + ', Emin ' + t.Emin + ' psi; CM(Fc) ' + t.CM_Fc + ', CF(Fb) ' + f2(t.CF_Fb, 3) + ', Ct ' + inp.Ct + ', Ke ' + inp.Ke + ', fixity ' + f2(res.dfix, 1) + ' ft.' : 'Concrete (preliminary ASD).'}
-                Soil: Kp ${f2(res.Kp)}, δ ${res.delta}°, Nq ${res.Nq}, f<sub>s,lim</sub> ${res.api.fslim} ksf, q<sub>lim</sub> ${res.api.qlim} ksf. Pile tip ${f2(res.tipUsed, 1)} ft below grade ${res.tipGiven ? '(input)' : '(= required, design mode)'}; max required tip ${f2(res.tipReqMax, 1)} ft.</p>`;
+                Soil: ${inp.soilType === 'clay' ? 'CLAY su ' + inp.suTop + ' psf + ' + inp.suGrad + ' psf/ft (cap ' + inp.suMax + '), α method, 9su end bearing, Broms clay; ' : ''}Kp ${f2(res.Kp)}, δ ${res.delta}°, Nq ${res.Nq}, f<sub>s,lim</sub> ${res.api.fslim} ksf, q<sub>lim</sub> ${res.api.qlim} ksf. Pile tip ${f2(res.tipUsed, 1)} ft below grade ${res.tipGiven ? '(input)' : '(= required, design mode)'}; max required tip ${f2(res.tipReqMax, 1)} ft.</p>`;
             if (inp.topCond === 'braced') {
                 const mx = res.rows.reduce((a, r) => Math.max(a, (r.Rtop || 0) + (r.Wtop || 0)), 0);
                 h += `<p><strong>Top braced at floor framing:</strong> pile modeled as propped cantilever (pinned top, fixed ${f2(res.dfix, 1)} ft below scour line), le = ${inp.KeBr} × (scour line to framing). Lateral wind at the top and the flood prop reaction go to the floor diaphragm — max per-pile top reaction ${f2(mx)} k must be resisted by the building's lateral system (shear walls / knee braces / cross bracing). Embedment checked for V and M at the scour line (Broms equilibrium, FS ${inp.FSlat}).</p>`;
@@ -695,6 +739,7 @@
                 ['Height of pile top above grade h', inp.h + ' ft'],
                 ['Loads D / L / Lr / Wv / Wh (nominal)', [inp.D, inp.L, inp.Lr, inp.Wv, inp.Wh].join(' / ') + ' kips'],
                 ['User P / Hx / Hy (single case)', [inp.P, inp.Hx, inp.Hy].join(' / ') + ' kips'],
+                ['Soil type', inp.soilType === 'clay' ? `Clay: su ${inp.suTop} psf + ${inp.suGrad} psf/ft, cap ${inp.suMax} psf (α method, 9su, Broms clay)` : 'Sand (β method, Nq, Broms sand)'],
                 ["Soil γ' / γm / φ / δ / dw", `${inp.gammaEff} pcf / ${inp.gammaM} pcf / ${inp.phi}° / ${res.delta}° / ${inp.dw} ft`],
                 ['K comp / K tension / Nq', `${inp.Kc} / ${inp.Kt} / ${res.Nq}`],
                 ['FS comp / uplift / lateral', `${inp.FSc} / ${inp.FSt} / ${inp.FSlat}`],
@@ -714,6 +759,7 @@
                 <li>FEMA P-55 Coastal Construction Manual, Ch. 8: Hb = 0.78ds, local scour ≈ 2D, debris impact Eq. 8.11.</li>
                 <li>AWC NDS 2018: §3.7 column stability Cp, §3.9.2 combined bending + compression, Table 4D sawn timbers, Table 6A round piles, CD per Table 2.3.2.</li>
                 <li>Broms (1964) lateral resistance of piles in cohesionless soil (short free-head pile; max moment depth 0.82√(H/γ'DKp)).</li>
+                <li>API RP 2A-WSD §6.4.2 α method for clay (α = 0.5ψ^-0.5 / 0.5ψ^-0.25), end bearing 9su; Broms (1964) lateral resistance in cohesive soil (9suD, top 1.5D neglected).</li>
                 <li>API RP 2A-WSD Table 6.4.3-1 limiting skin friction and end bearing for sand; β = K·tanδ effective-stress method.</li></ul>
                 <p style="font-size:9pt"><strong>PRELIMINARY.</strong> Loads per pile are user-supplied. Geotechnical values assumed without site borings. Review and seal by a licensed engineer required.</p>`;
         }
