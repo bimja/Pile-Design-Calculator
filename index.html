@@ -228,6 +228,11 @@
                 <div><label>Notched: beam Fc⊥′ (psi; SP 565 × CM 0.67 wet = 379)</label><input type="number" id="FcPerp" value="379" step="10"></div>
                 <div><label>Top connection moment capacity override (k-ft; blank = bolt group; enter for a designed moment connection)</label><input type="number" id="connMcap" value="" step="0.5"></div>
                 <div><label>Orthogonal direction Y: wind share per pile (kips, strength; same top condition; 0 = uniaxial). Runs Y alone and ASCE 7 Case 3 (0.75X + 0.75Y) biaxial</label><input type="number" id="WhY" value="0" step="0.1"></div>
+                <div><label>Debris impact shared by floor diaphragm: number of piles tied by the floor (0 = struck pile sways alone)</label><input type="number" id="debrisShareN" value="0" step="1">
+                    <div style="font-size:0.8em;color:#555">Sway frame only. With a floor diaphragm tying N pile tops, the struck pile spans fixity → floor as a propped cantilever for the impact; the prop reaction is spread over N piles. Requires the floor framing/diaphragm and beam-to-pile shear connection to deliver the prop reaction (checked separately).</div></div>
+                <div><label>Drift check basis</label><select id="driftBasis"><option value="strength" selected>All ASD combos incl. flood (strength-level, conservative)</option><option value="service">Serviceability wind only (no flood): svc factor × strength wind</option></select>
+                    <div style="font-size:0.8em;color:#555">Drift is a serviceability limit with no code value for pile foundations. Service basis: IBC Table 1604.3 note f allows 0.42 × the Vult-level wind for deflection (≈ 0.7 × ASD wind); ASCE 7-22 App. CC suggests a 10-yr MRI wind (≈ 0.3–0.45 × strength on the Texas coast). Strength-level stability (P-delta) stays in the NDS 3.9.2 check.</div></div>
+                <div><label>Serviceability wind factor × strength wind (0.42 = IBC 1604.3 note f)</label><input type="number" id="svcF" value="0.42" step="0.02"></div>
                 <div><label>Drift limit: floor sway ≤ (height above scour line) / N, N =</label><input type="number" id="driftN" value="100" step="10"></div>
                 <div><label>Brace foot height above grade (ft)</label><input type="number" id="braceFoot" value="1" step="0.5"></div>
                 <div><label>Ke for braced top (NDS App. G: 1.0 pinned, 0.8 fixed-base)</label><input type="number" id="KeBr" value="1.0" step="0.1"></div>
@@ -454,7 +459,7 @@
                 Kc: numVal('Kc', 1.0), Kt: numVal('Kt', 0.8), FSc: numVal('FSc', 2.5), FSt: numVal('FSt', 3.0), FSlat: numVal('FSlat', 2.0),
                 NqOv: numVal('NqOv', NaN), soilType: strVal('soilType', 'sand') === 'clay' ? 'clay' : 'sand', suTop: numVal('suTop', 500), suGrad: numVal('suGrad', 0), suMax: numVal('suMax', 2000),
                 dfix: numVal('dfix', NaN), Ke: numVal('Ke', 2.1), topCond: ['braced', 'sway', 'free'].indexOf(strVal('topCond', 'sway')) >= 0 ? strVal('topCond', 'sway') : 'sway',
-                topFix: numVal('topFix', 0.5), KeFix: numVal('KeFix', 1.2), connZ: numVal('connZ', 1.93), connGeom: strVal('connGeom', '2/6/1'), connMcap: numVal('connMcap', NaN), connType: strVal('connType', 'bolted'), notchGeom: strVal('notchGeom', '11.25/3/1.5/2'), notchShoulder: strVal('notchShoulder', 'dado'), FcPerp: numVal('FcPerp', 379), driftN: numVal('driftN', 100), WhY: numVal('WhY', 0), KeBr: numVal('KeBr', 1.0), Ct: numVal('Ct', 1.0),
+                topFix: numVal('topFix', 0.5), KeFix: numVal('KeFix', 1.2), connZ: numVal('connZ', 1.93), connGeom: strVal('connGeom', '2/6/1'), connMcap: numVal('connMcap', NaN), connType: strVal('connType', 'bolted'), notchGeom: strVal('notchGeom', '11.25/3/1.5/2'), notchShoulder: strVal('notchShoulder', 'dado'), FcPerp: numVal('FcPerp', 379), debrisShareN: numVal('debrisShareN', 0), driftN: numVal('driftN', 100), driftBasis: strVal('driftBasis', 'strength'), svcF: numVal('svcF', 0.42), WhY: numVal('WhY', 0), KeBr: numVal('KeBr', 1.0), Ct: numVal('Ct', 1.0),
                 zone: ['AE', 'CA', 'VE'].indexOf(strVal('zone', 'none')) >= 0 ? strVal('zone', 'none') : 'none',
                 BFE: numVal('BFE', NaN), G: numVal('Gelev', NaN), Esw: numVal('Esw', NaN), V: numVal('Vel', NaN),
                 erosion: numVal('erosion', 0), localScour: numVal('localScour', NaN), dragA: numVal('dragA', NaN),
@@ -611,7 +616,7 @@
             const scen = [];
             if (coastal) scen.push({ key: 'brk', name: 'breaking wave', forces: [{ F: Fbrk, y: ds }] });
             scen.push({ key: 'dyn', name: inp.debrisOn ? 'hydrodynamic + debris' : 'hydrodynamic', debris: !!inp.debrisOn,
-                        forces: [{ F: Fdyn, y: ds / 2 }].concat(inp.debrisOn ? [{ F: Fdeb, y: ds }] : []) });
+                        forces: [{ F: Fdyn, y: ds / 2 }].concat(inp.debrisOn ? [{ F: Fdeb, y: ds, debris: true }] : []) });
             return { coastal, G, BFE, Ge, Esw, ds, Hb, V, local, S, CDb, Dw, Fbrk, a, Fdyn, CDd, Fdeb, CB, CStr, CI, CO, Rmax, dt, debris: !!inp.debrisOn, scen,
                      kf: coastal ? 1.5 : 0.75, gw };
         }
@@ -832,7 +837,15 @@
                     if (c.fW * inp.Wh > 0) forces.push({ F: c.fW * inp.Wh, y: bracedG ? drop + bf : top, wind: true });
                     // wind on the exposed pile itself (ASCE 7-22 §29.4: F = qz G Cf Af), resultant at mid-height of exposed length
                     if (c.fW * pw.F > 0) forces.push({ F: c.fW * pw.F, y: drop + pw.y0 + pw.Hexp / 2, pileWind: true });
-                    if (isF) c.flood.forces.forEach(f => forces.push({ F: c.kf * f.F, y: f.y + flood.local }));
+                    if (isF) c.flood.forces.forEach(f => forces.push({ F: c.kf * f.F, y: f.y + flood.local, debris: !!f.debris }));
+                    // Debris impact shared by the floor diaphragm (sway mode): the struck pile's top is held in translation by the
+                    // other N−1 piles, so it spans as a propped cantilever (fixity → floor) for the impact; the prop reaction
+                    // R = P a²(3L − a)/(2L³) goes into the diaphragm and only R/N returns to this pile as sway shear.
+                    const nSh = isFinite(inp.debrisShareN) ? inp.debrisShareN : 0;
+                    if (sway && nSh > 1) forces.filter(f => f.debris).forEach(f => {
+                        const L = top + dfix, a = f.y + dfix, R = f.F * a * a * (3 * L - a) / (2 * L * L * L);
+                        forces.push({ F: -R * (1 - 1 / nSh), y: top, debrisProp: true });
+                    });
                 }
                 let br;
                 const braced = bracedG;
@@ -859,7 +872,8 @@
                     const Lreq = bromsVM(H, Mg, inp.FSlat, drop);
                     const cS = H > 0 ? H / (9 * su(1.5 * bft + 2, drop) * bft) : 0;
                     const Mbelow = clay ? Math.abs(Mg) + H * (1.5 * bft + 0.5 * cS) : Math.abs(Mfix);
-                    br = { H, M0: Mg, e: H > 0 ? Mg / H : 0, Lreq, f: cS, Mmax: Math.max(Math.abs(Mtop), Mbelow), Mfix,
+                    const Mspan = forces.reduce((m, fi) => Math.max(m, Math.abs(forces.reduce((a, f) => a + (f.y > fi.y ? f.F * (f.y - fi.y) : 0), 0) - Mtop)), 0);
+                    br = { H, M0: Mg, e: H > 0 ? Mg / H : 0, Lreq, f: cS, Mmax: Math.max(Math.abs(Mtop), Mbelow, Mspan), Mfix, Mspan,
                            Mabove: Math.max(Math.abs(Mtop), Math.abs(Mg)), Mbelow, Rtop: 0, Wtop: 0, Mtop, Lc, aL, capped: Math.abs(aL * Mfx) > capM };
                 } else {
                     br = broms(forces, inp.FSlat, drop);
@@ -903,7 +917,8 @@
                         const Mg = fs.reduce((a, f) => a + f.F * f.y, 0) - Mt;
                         const cS = H > 0 ? H / (9 * su(1.5 * bft + 2, drop) * bft) : 0;
                         const Mb = clay ? Math.abs(Mg) + H * (1.5 * bft + 0.5 * cS) : Math.abs(fs.reduce((a, f) => a + f.F * (f.y + dfix), 0) - Mt);
-                        return { Mtop: Mt, Mmax: Math.max(Math.abs(Mt), Mb) };
+                        const Ms = fs.reduce((m, fi) => Math.max(m, Math.abs(fs.reduce((a, f) => a + (f.y > fi.y ? f.F * (f.y - fi.y) : 0), 0) - Mt)), 0);
+                        return { Mtop: Mt, Mmax: Math.max(Math.abs(Mt), Mb, Ms) };
                     }
                     return { Mtop: 0, Mmax: broms(fs, inp.FSlat, drop).Mmax };
                 }
@@ -954,6 +969,21 @@
                     drift = Math.max(drift, dY1, d3); rDrift = drift / driftLim;
                     if (sway) rConn = Math.max(rConn, conn.Mcap > 0 ? Math.abs(Y1.Mtop) / conn.Mcap : 99);
                 }
+                // Serviceability-wind drift option: drift checked under wind only (no flood / storm scour) at svcF × strength wind
+                // (IBC 1604.3 note f: 0.42 × Vult-level wind for deflection ≈ 0.7 × ASD; ASCE 7 App. CC 10-yr MRI ≈ 0.3–0.45 × strength).
+                // Strength-level stability/P-delta stays in the NDS 3.9.2 check; the strength-level drift is still reported (driftStr).
+                let driftStr = drift;
+                if (inp.driftBasis === 'service' && !braced && !c.user && tim) {
+                    const k = (isFinite(inp.svcF) ? inp.svcF : 0.42) / 0.6;
+                    if (isF || !(c.fW > 0)) { drift = 0; rDrift = 0; }
+                    else {
+                        const fsS = forces.map(f => (f.wind || f.pileWind) ? Object.assign({}, f, { F: k * f.F }) : f);
+                        drift = driftOf(fsS, momentsFor(fsS).Mtop);
+                        if (WhY > 0) { const fyS = [{ F: k * c.fW * WhY, y: top, wind: true }].concat(pw.F > 0 ? [{ F: k * c.fW * pw.F, y: drop + pw.y0 + pw.Hexp / 2 }] : []);
+                            drift = Math.max(drift, driftOf(fyS, momentsFor(fyS).Mtop)); }
+                        rDrift = drift / driftLim;
+                    }
+                }
                 // geotechnical
                 const Qs_c = skin(Lav, inp.Kc, isF, drop), Qb = endBearing(Lav, isF, drop), Qs_t = skin(Lav, inp.Kt, isF, drop);
                 const Qa_c = (Qs_c + Qb) / inp.FSc, Qa_t = Qs_t / inp.FSt;
@@ -962,7 +992,7 @@
                     id: c.id, name: c.name, CD: c.CD, dScour, P, Wp, Pc, H: br.H, M0: br.M0, e: br.e, Mmax: br.Mmax, f: br.f,
                     Rtop: br.Rtop, Wtop: br.Wtop, Mabove: br.Mabove, Mbelow: br.Mbelow, Lreq: br.Lreq, tipReq: br.Lreq + drop, Lav, drop,
                     st, Qs_c, Qb, Qa_c, Qs_t, Qa_t, T,
-                    drift, driftLim, ampl, rDrift, rConn, notch, aL, Mcapped: !!br.capped, biax, Mtop: br.Mtop || 0, rStruct: st.ratio, rEmbed: Lav > 0 ? br.Lreq / Lav : (br.Lreq > 0 ? 99 : 0),
+                    drift, driftStr, driftLim, ampl, rDrift, rConn, notch, aL, Mcapped: !!br.capped, biax, Mtop: br.Mtop || 0, rStruct: st.ratio, rEmbed: Lav > 0 ? br.Lreq / Lav : (br.Lreq > 0 ? 99 : 0),
                     rComp: Pc > 0 ? Pc / Qa_c : 0, rUplift: T > 0 ? (Qa_t > 0 ? T / Qa_t : 99) : 0
                 };
             }

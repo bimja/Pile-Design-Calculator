@@ -88,6 +88,26 @@ t('12x12 perimeter passes only with a full moment connection AND drift relaxed t
   assert.ok(!S(Object.assign({}, fm, per)).ok); assert.ok(S(Object.assign({ driftN: 75 }, fm, per)).ok);
   assert.ok(!S(Object.assign({ driftN: 75, debrisOn: true }, fm, per)).ok);
 });
+const A = { Wh: 5.10, WhY: 1.96 }, perA = Object.assign({}, per, { WhY: 1.96 });
+t('serviceability drift: flood combos excluded, wind-only drift scales with svcF; strength drift kept as driftStr', () => {
+  const i = Object.assign({}, base, perA, A, { topCond: 'sway', connType: 'notched', d: 14, Ltip: 20 });
+  const rs = lib.pileDesign(Object.assign({}, i, { driftBasis: 'service' }));
+  assert.ok(rs.rows.filter(x => /F-/.test(x.id)).every(x => x.rDrift === 0 && x.driftStr > 0));
+  const r5 = rs.rows.find(x => x.id === '5'), r5b = lib.pileDesign(Object.assign({}, i, { driftBasis: 'service', svcF: 0.21 })).rows.find(x => x.id === '5');
+  assert.ok(r5.drift > 1.8 * r5b.drift && r5.drift < 2.2 * r5b.drift);
+});
+t('debris shared by the floor diaphragm (N = 18): struck 14x14 bending drops from ≈1.26 to ≈0.88', () => {
+  const i = Object.assign({}, base, perA, A, { topCond: 'sway', connType: 'notched', d: 14, debrisOn: true, driftBasis: 'service' });
+  assert.ok(!S(i).ok); const s = S(Object.assign({}, i, { debrisShareN: 18 }));
+  assert.ok(s.ok, s.maxCheck); assert.ok(Math.abs(s.checks.rStruct.ratio - 0.88) < 0.03);
+});
+t('recommended 14x14 scheme (rigid-diaphragm wind 5.10 k, notched, service drift h/100, debris shared): every pile passes, ≤ 40 ft except soft-profile interior (axial)', () => {
+  const sch = { topCond: 'sway', connType: 'notched', d: 14, driftBasis: 'service', debrisShareN: 18 };
+  [[{ WhY: 1.96 }, 39.8, 45.3], [perA, 27.3, 31.3], [Object.assign({}, perA, { Wot: -8.3 }), 27.3, 30.3], [Object.assign({ debrisOn: true }, perA), 28.3, 31.8]].forEach(([m, tb, ts]) => {
+    const sb = S(Object.assign({}, A, sch, m)), ss = S(Object.assign({}, A, sch, m, soft));
+    assert.ok(sb.ok && ss.ok); assert.ok(Math.abs(sb.tip + 11.3 - tb) < 0.01 && Math.abs(ss.tip + 11.3 - ts) < 0.01, sb.tip + '/' + ss.tip);
+  });
+});
 t('calculator default top condition is the sway frame (bracing is opt-in)', () => {
   assert.ok(/<option value="sway" selected>/.test(require('fs').readFileSync(require('path').join(__dirname, '..', 'index.html'), 'utf8')));
 });
