@@ -10,18 +10,38 @@
         .container { max-width: 900px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 0 15px rgba(0,0,0,0.1); }
         label { display: block; margin: 10px 0 5px; font-weight: bold; }
         input, select { width: 100%; padding: 8px; margin-bottom: 15px; border: 1px solid #ccc; border-radius: 5px; }
+        input[type=checkbox] { width: auto; }
         button { background: #0066cc; color: white; padding: 12px 20px; border: none; border-radius: 5px; font-size: 1.1em; cursor: pointer; }
         button:hover { background: #0055aa; }
-        #results { margin-top: 30px; padding: 20px; background: #e6f0ff; border-radius: 8px; }
+        #results, #advResults { margin-top: 30px; padding: 20px; background: #e6f0ff; border-radius: 8px; }
         table { width: 100%; border-collapse: collapse; margin: 15px 0; }
         th, td { border: 1px solid #0066cc; padding: 10px; text-align: center; }
         th { background: #0066cc; color: white; }
         .note { font-size: 0.9em; color: #555; margin-top: 20px; border-top: 1px solid #ccc; padding-top: 10px; }
         .conditional { display: none; }
+        details { margin: 15px 0; border: 1px solid #cde; border-radius: 6px; padding: 8px 12px; }
+        summary { font-weight: bold; cursor: pointer; color: #0066cc; }
+        .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+        table.combo th, table.combo td { padding: 4px; font-size: 0.82em; }
+        .fail { background: #ffd6d6; font-weight: bold; }
+        .ok { background: #dcf5dc; }
+        #calcSheet { display: none; }
+        @media print {
+            body { background: white; margin: 0; }
+            .container { box-shadow: none; max-width: none; padding: 0; }
+            .no-print, #results, #advResults { display: none !important; }
+            #calcSheet { display: block !important; font-size: 10pt; }
+            #calcSheet table th, #calcSheet table td { padding: 3px; font-size: 8.5pt; }
+            #calcSheet th { background: #ddd !important; color: black; }
+            h2 { page-break-after: avoid; }
+            table { page-break-inside: auto; }
+            tr { page-break-inside: avoid; }
+        }
     </style>
 </head>
 <body>
     <div class="container">
+      <div class="no-print">
         <h1>🌊 Coastal Home Pile Design Calculator</h1>
         <p style="text-align:center; font-style:italic;">Preliminary tool for elevated coastal homes • Galveston, TX coast defaults • Based on Broms lateral method (sand) + ASD stresses</p>
         
@@ -57,16 +77,34 @@
         <label>Pile Material</label>
         <select id="pileType" onchange="togglePileOptions()">
             <option value="timber" selected>Timber Pile</option>
-            <option value="concrete">Concrete Pile (Round, Plain/Reinforced Preliminary)</option>
+            <option value="concrete">Concrete Pile (Plain/Reinforced Preliminary)</option>
+        </select>
+
+        <label>Pile Shape</label>
+        <select id="shape" onchange="togglePileOptions()">
+            <option value="round" selected>Round (d = diameter)</option>
+            <option value="square">Square (d = side width, e.g. 12x12 → 12; timber = sawn timber 5x5 and larger)</option>
         </select>
         
         <!-- Timber Options -->
         <div id="timberOptions">
-            <label>Timber Species</label>
+            <div id="roundTimberOptions">
+            <label>Timber Species (round timber pile, NDS Table 6A)</label>
             <select id="species">
                 <option value="SP" selected>Southern Pine (Fc=1200 psi, Fb=2400 psi)</option>
                 <option value="DF">Douglas Fir (Fc=1250 psi, Fb=2450 psi)</option>
             </select>
+            </div>
+            <div id="sawnTimberOptions" class="conditional">
+            <label>Sawn Timber Species/Grade (NDS Supplement Table 4D, 5"x5" and larger)</label>
+            <select id="sawnGrade">
+                <option value="SP_SS">Southern Pine Select Structural (Fb 1500, Fc 950, Emin 550k)</option>
+                <option value="SP_1" selected>Southern Pine No.1 (Fb 1350, Fc 825, Emin 550k)</option>
+                <option value="SP_2">Southern Pine No.2 (Fb 850, Fc 525, Emin 440k)</option>
+                <option value="DF_1">Douglas Fir-Larch No.1 P&amp;T (Fb 1200, Fc 1000, Emin 580k)</option>
+                <option value="DF_2">Douglas Fir-Larch No.2 P&amp;T (Fb 750, Fc 700, Emin 470k)</option>
+            </select>
+            </div>
         </div>
         
         <!-- Concrete Options -->
@@ -75,14 +113,91 @@
             <input type="number" id="fc_prime" value="5000" step="100">
         </div>
         
-        <label>Trial Pile Diameter d (inches) — round pile</label>
+        <label>Trial Pile Size d (inches) — diameter (round) or side width (square)</label>
         <input type="number" id="d_trial" value="12" step="0.5">
+
+        <details id="advInputs">
+            <summary>Advanced: Load Components, Geotechnical Capacity, Flood Loads (ASCE 7-22) — optional</summary>
+            <p style="font-size:0.85em;">Leave load components at 0 to keep the original single-case behavior (P, Hx, Hy above). Enter nominal (unfactored) per-pile loads to run the full ASCE 7-22 §2.4 ASD combination table.</p>
+
+            <label>Project Name (for calc sheet)</label>
+            <input type="text" id="projName" value="">
+
+            <h3>Per-Pile Load Components (nominal, unfactored)</h3>
+            <div class="grid2">
+                <div><label>Dead D (kips, down +)</label><input type="number" id="Dld" value="0" step="0.1"></div>
+                <div><label>Floor Live L (kips)</label><input type="number" id="Lld" value="0" step="0.1"></div>
+                <div><label>Roof Live Lr (kips)</label><input type="number" id="Lrld" value="0" step="0.1"></div>
+                <div><label>Wind vertical Wv (kips, strength level; uplift = negative)</label><input type="number" id="Wvld" value="0" step="0.1"></div>
+                <div><label>Wind lateral Wh at pile top (kips, strength level)</label><input type="number" id="Whld" value="0" step="0.1"></div>
+                <div><label>Pile unit weight (pcf; blank = 50 timber / 150 concrete)</label><input type="number" id="pileUnitWt" value="" step="1"></div>
+            </div>
+
+            <h3>Geotechnical</h3>
+            <div class="grid2">
+                <div><label>Soil type</label>
+                    <select id="soilType">
+                        <option value="sand" selected>Sand / cohesionless (β = K tanδ, Nq, Broms sand)</option>
+                        <option value="clay">Clay / cohesive, undrained (α method, 9su, Broms clay)</option>
+                    </select></div>
+                <div><label>Clay: su at existing grade (psf)</label><input type="number" id="suTop" value="500" step="50"></div>
+                <div><label>Clay: su increase with depth (psf/ft)</label><input type="number" id="suGrad" value="0" step="5"></div>
+                <div><label>Clay: su cap (psf)</label><input type="number" id="suMax" value="2000" step="50"></div>
+                <div><label>Pile tip depth below existing grade (ft; blank = use required)</label><input type="number" id="Ltip" value="" step="0.1"></div>
+                <div><label>Depth to groundwater below grade dw (ft)</label><input type="number" id="dw" value="0" step="0.5"></div>
+                <div><label>Moist unit weight above water γm (pcf)</label><input type="number" id="gammaM" value="110" step="1"></div>
+                <div><label>Interface friction angle δ (deg; blank = φ − 5)</label><input type="number" id="delta" value="" step="1"></div>
+                <div><label>Lateral earth pressure coeff. K, compression</label><input type="number" id="Kc" value="1.0" step="0.05"></div>
+                <div><label>Lateral earth pressure coeff. K, tension</label><input type="number" id="Kt" value="0.8" step="0.05"></div>
+                <div><label>FS axial compression</label><input type="number" id="FSc" value="2.5" step="0.1"></div>
+                <div><label>FS uplift (2.0–3.0)</label><input type="number" id="FSt" value="3.0" step="0.1" min="2" max="3"></div>
+                <div><label>FS lateral (Broms)</label><input type="number" id="FSlat" value="2.0" step="0.1"></div>
+                <div><label>Nq override (blank = API RP 2A by φ)</label><input type="number" id="NqOv" value="" step="1"></div>
+            </div>
+
+            <h3>Timber Column Stability (NDS 3.7)</h3>
+            <div class="grid2">
+                <div><label>Depth to fixity below (scoured) grade (ft; blank = 5d)</label><input type="number" id="dfix" value="" step="0.5"></div>
+                <div><label>Effective length factor Ke (2.1 free-top cantilever)</label><input type="number" id="Ke" value="2.1" step="0.1"></div>
+                <div><label>Pile top condition</label>
+                    <select id="topCond">
+                        <option value="free" selected>Free top (cantilever, current behavior)</option>
+                        <option value="braced">Top braced / pinned at floor framing (diaphragm takes translation)</option>
+                    </select></div>
+                <div><label>Ke for braced top (NDS App. G: 1.0 pinned, 0.8 fixed-base)</label><input type="number" id="KeBr" value="1.0" step="0.1"></div>
+                <div><label>Temperature factor Ct</label><input type="number" id="Ct" value="1.0" step="0.05"></div>
+            </div>
+
+            <h3>Flood Loads (ASCE 7-22 Ch. 5 / FEMA P-55)</h3>
+            <div class="grid2">
+                <div><label>Flood Zone</label>
+                    <select id="zone">
+                        <option value="none" selected>None (no flood combos)</option>
+                        <option value="AE">A / AE (non-coastal) — 0.75Fa, no breaking wave</option>
+                        <option value="CA">Coastal A Zone — 1.5Fa, breaking wave</option>
+                        <option value="VE">V / VE Zone — 1.5Fa, breaking wave</option>
+                    </select></div>
+                <div><label>BFE / DFE (ft, same datum as grade)</label><input type="number" id="BFE" value="" step="0.1"></div>
+                <div><label>Ground elevation at pile, LAG (ft)</label><input type="number" id="Gelev" value="" step="0.01"></div>
+                <div><label>Stillwater elevation Esw (ft; blank = derived from BFE)</label><input type="number" id="Esw" value="" step="0.1"></div>
+                <div><label>Flood velocity V (ft/s; blank = √(g·ds) coastal / ds/1s AE)</label><input type="number" id="Vel" value="" step="0.5"></div>
+                <div><label>General erosion (ft)</label><input type="number" id="erosion" value="0" step="0.5"></div>
+                <div><label>Local scour (ft; blank = 2d per FEMA P-55)</label><input type="number" id="localScour" value="" step="0.5"></div>
+                <div><label>Hydrodynamic drag coeff. a (2.0 square / 1.2 round typ.)</label><input type="number" id="dragA" value="" step="0.05"></div>
+                <div><label><input type="checkbox" id="debrisOn" checked> Include debris impact (FEMA P-55)</label></div>
+                <div><label>Debris weight W (lb)</label><input type="number" id="debrisW" value="1000" step="100"></div>
+            </div>
+        </details>
         
         <button onclick="calculate()">Calculate Design</button>
+        <button onclick="window.print()" style="background:#555;">🖨 Print Calc Sheet</button>
+      </div>
         
         <div id="results"></div>
+        <div id="advResults"></div>
+        <div id="calcSheet"></div>
         
-        <div class="note">
+        <div class="note no-print">
             <strong>Notes &amp; Limitations:</strong><br>
             • Tributary loads are per pile (user-provided; calculate separately from wind/tributary area using ASCE 7).<br>
             • Lateral capacity uses Broms method (free-head pile in cohesionless sand).<br>
@@ -90,6 +205,7 @@
             • Timber: Wet service values.<br>
             • Concrete: Preliminary ASD (Fc ≈ 0.33 f'c, Fb conservative). For reinforced piles, consult engineer.<br>
             • FS = 2.0 on lateral capacity. Add scour/erosion allowance (typically 2–4 ft or 2.5×diameter per FEMA).<br>
+            • Advanced section: ASCE 7-22 §2.4 ASD combos, §5.4 flood loads, FEMA P-55 scour/debris, NDS 2018 Ch. 3/4/6 timber factors, API RP 2A sand skin friction/end bearing limits. Uplift and compression geotechnical capacities are static estimates without site borings.<br>
             • This is a preliminary calculator only. Always consult a licensed structural/geotechnical engineer and site-specific soil borings.
         </div>
     </div>
@@ -97,8 +213,39 @@
     <script>
         function togglePileOptions() {
             const pileType = document.getElementById('pileType').value;
+            const shapeEl = document.getElementById('shape');
+            const shape = shapeEl ? shapeEl.value : 'round';
             document.getElementById('timberOptions').style.display = pileType === 'timber' ? 'block' : 'none';
             document.getElementById('concreteOptions').style.display = pileType === 'concrete' ? 'block' : 'none';
+            const r = document.getElementById('roundTimberOptions'), s = document.getElementById('sawnTimberOptions');
+            if (r && s) { r.style.display = shape === 'square' ? 'none' : 'block'; s.style.display = shape === 'square' ? 'block' : 'none'; }
+        }
+
+        // ---------- helpers ----------
+        function numVal(id, def) {
+            const el = document.getElementById(id);
+            if (!el) return def;
+            const v = parseFloat(el.value);
+            return isNaN(v) ? def : v;
+        }
+        function strVal(id, def) {
+            const el = document.getElementById(id);
+            if (!el || el.value === undefined || el.value === null || el.value === '' || el.value === 'undefined') return def;
+            return String(el.value);
+        }
+        function boolVal(id, def) {
+            const el = document.getElementById(id);
+            if (!el || typeof el.checked !== 'boolean') return def;
+            return el.checked;
+        }
+
+        // Section properties (in units of d): A in², S in³, I in⁴, perimeter in
+        function sectionProps(shape, d) {
+            if (shape === 'square') {
+                return { A: d * d, S: Math.pow(d, 3) / 6, I: Math.pow(d, 4) / 12, per: 4 * d, deq: d };
+            }
+            return { A: Math.PI * d * d / 4, S: Math.PI * Math.pow(d, 3) / 32, I: Math.PI * Math.pow(d, 4) / 64,
+                     per: Math.PI * d, deq: Math.sqrt(Math.PI) * d / 2 };  // deq = square of equal area (NDS 3.7.3)
         }
 
         function calculate() {
@@ -111,6 +258,7 @@
             let phi = parseFloat(document.getElementById('phi').value);       // deg
             let pileType = document.getElementById('pileType').value;
             let d_trial = parseFloat(document.getElementById('d_trial').value) || 12; // inches
+            let shape = strVal('shape', 'round') === 'square' ? 'square' : 'round';
 
             let H = Math.sqrt(Hx*Hx + Hy*Hy); // total lateral kips
             let M = H * h;                    // kip-ft
@@ -133,14 +281,15 @@
                 Fb = 0.45 * Math.sqrt(fc_prime) * 1.5; // Conservative allowable bending (approx modulus of rupture / FS)
                 materialName = `Concrete f'c=${fc_prime} psi`;
             }
+            if (shape === 'square') materialName += ' (square)';
 
             // ===================== STRUCTURAL CHECK (find min diameter) =====================
             let minD = 8;
             let ratio = 2.0;
             for (let d = 8; d <= 36; d += 0.25) {  // Extended range for concrete
-                let r = d / 2;                    // in
-                let A = Math.PI * r * r;          // in²
-                let S = Math.PI * Math.pow(d, 3) / 32; // in³ section modulus round
+                let sp = sectionProps(shape, d);
+                let A = sp.A;                     // in²
+                let S = sp.S;                     // in³
                 let fa = (P * 1000) / A;          // psi
                 let fb = (M * 12 * 1000) / S;     // psi (M in kip-ft → kip-in)
                 let interaction = (fa / Fc) + (fb / Fb);
@@ -152,9 +301,9 @@
             }
             let d_use = Math.max(minD, d_trial);
             // Re-check at d_use
-            let r_use = d_use / 2;
-            let A_use = Math.PI * r_use * r_use;
-            let S_use = Math.PI * Math.pow(d_use, 3) / 32;
+            let sp_use = sectionProps(shape, d_use);
+            let A_use = sp_use.A;
+            let S_use = sp_use.S;
             let fa_use = (P * 1000) / A_use;
             let fb_use = (M * 12 * 1000) / S_use;
             let interaction_use = (fa_use / Fc) + (fb_use / Fb);
@@ -178,6 +327,7 @@
             // Total pile length recommendation
             let total_L = Math.ceil(L_req + h + 3); // +3 ft cutoff/scour buffer
 
+            const sizeWord = shape === 'square' ? 'Size (side)' : 'Diameter';
             // ===================== OUTPUT =====================
             let html = `
                 <h2>Results - ${materialName}</h2>
@@ -185,8 +335,8 @@
                     <tr><th>Parameter</th><th>Value</th></tr>
                     <tr><td>Total Lateral Load H</td><td>${H.toFixed(2)} kips</td></tr>
                     <tr><td>Applied Moment at Grade M</td><td>${M.toFixed(1)} kip-ft</td></tr>
-                    <tr><td>Minimum Diameter (structural)</td><td>${minD.toFixed(1)} in</td></tr>
-                    <tr><td>Recommended Diameter (using trial)</td><td><strong>${d_use.toFixed(1)} in</strong></td></tr>
+                    <tr><td>Minimum ${sizeWord} (structural)</td><td>${minD.toFixed(1)} in</td></tr>
+                    <tr><td>Recommended ${sizeWord} (using trial)</td><td><strong>${d_use.toFixed(1)} in</strong></td></tr>
                     <tr><td>Axial Stress fa</td><td>${fa_use.toFixed(0)} psi</td></tr>
                     <tr><td>Bending Stress fb</td><td>${fb_use.toFixed(0)} psi</td></tr>
                     <tr><td>Allowable Fc</td><td>${Fc.toFixed(0)} psi</td></tr>
@@ -195,10 +345,423 @@
                     <tr><td>Required Embedment Depth L (Broms, FS=2)</td><td><strong>${L_req.toFixed(1)} ft</strong></td></tr>
                     <tr><td>Recommended Total Pile Length</td><td><strong>${total_L} ft</strong> (embed + height + buffer)</td></tr>
                 </table>
-                <p><strong>✅ OK to use ${d_use.toFixed(1)}" diameter pile with ${L_req.toFixed(1)} ft embedment.</strong></p>
+                <p><strong>✅ OK to use ${d_use.toFixed(1)}" ${shape === 'square' ? 'square' : 'diameter'} pile with ${L_req.toFixed(1)} ft embedment.</strong></p>
                 <p style="font-size:0.85em;">Wind speed ${document.getElementById('wind').value} mph noted for reference only.</p>
             `;
             document.getElementById('results').innerHTML = html;
+
+            // ===================== ADVANCED CHECKS (combos, geotech, flood) =====================
+            try {
+                const inp = readInputs();
+                const res = pileDesign(inp);
+                document.getElementById('advResults').innerHTML = renderAdvanced(inp, res);
+                document.getElementById('calcSheet').innerHTML = renderCalcSheet(inp, res);
+            } catch (err) {
+                document.getElementById('advResults').innerHTML = '<p>Advanced checks unavailable: ' + err.message + '</p>';
+            }
+        }
+
+        // Gather every input into a plain object (also used by headless test harnesses)
+        function readInputs() {
+            const pileType = strVal('pileType', 'timber');
+            return {
+                projName: strVal('projName', ''),
+                P: numVal('P', 0), Hx: numVal('Hx', 0), Hy: numVal('Hy', 0), h: numVal('h', 0),
+                gammaEff: numVal('gamma', 55), phi: numVal('phi', 30),
+                pileType: pileType, shape: strVal('shape', 'round') === 'square' ? 'square' : 'round',
+                species: strVal('species', 'SP'), sawnGrade: strVal('sawnGrade', 'SP_1'),
+                fc_prime: numVal('fc_prime', 5000), d: numVal('d_trial', 12),
+                D: numVal('Dld', 0), L: numVal('Lld', 0), Lr: numVal('Lrld', 0), Wv: numVal('Wvld', 0), Wh: numVal('Whld', 0),
+                pileUnitWt: numVal('pileUnitWt', NaN),
+                Ltip: numVal('Ltip', NaN), dw: numVal('dw', 0), gammaM: numVal('gammaM', 110), delta: numVal('delta', NaN),
+                Kc: numVal('Kc', 1.0), Kt: numVal('Kt', 0.8), FSc: numVal('FSc', 2.5), FSt: numVal('FSt', 3.0), FSlat: numVal('FSlat', 2.0),
+                NqOv: numVal('NqOv', NaN), soilType: strVal('soilType', 'sand') === 'clay' ? 'clay' : 'sand', suTop: numVal('suTop', 500), suGrad: numVal('suGrad', 0), suMax: numVal('suMax', 2000),
+                dfix: numVal('dfix', NaN), Ke: numVal('Ke', 2.1), topCond: strVal('topCond', 'free') === 'braced' ? 'braced' : 'free', KeBr: numVal('KeBr', 1.0), Ct: numVal('Ct', 1.0),
+                zone: ['AE', 'CA', 'VE'].indexOf(strVal('zone', 'none')) >= 0 ? strVal('zone', 'none') : 'none',
+                BFE: numVal('BFE', NaN), G: numVal('Gelev', NaN), Esw: numVal('Esw', NaN), V: numVal('Vel', NaN),
+                erosion: numVal('erosion', 0), localScour: numVal('localScour', NaN), dragA: numVal('dragA', NaN),
+                debrisOn: boolVal('debrisOn', true), debrisW: numVal('debrisW', 1000)
+            };
+        }
+
+        // API RP 2A (Table 6.4.3-1) design parameters for cohesionless soil, by friction angle
+        function apiSand(phi) {
+            if (phi <= 20) return { Nq: 8, qlim: 40, fslim: 1.0 };      // ksf
+            if (phi <= 25) return { Nq: 12, qlim: 60, fslim: 1.4 };
+            if (phi <= 30) return { Nq: 20, qlim: 100, fslim: 1.7 };
+            if (phi <= 35) return { Nq: 40, qlim: 200, fslim: 2.0 };
+            return { Nq: 50, qlim: 250, fslim: 2.4 };
+        }
+
+        // Timber reference design values (psi) and adjustment basis
+        function timberRef(inp) {
+            const d = inp.d;
+            if (inp.shape === 'square') {
+                const T = {
+                    SP_SS: ['Southern Pine Select Structural', 1500, 950, 550000],
+                    SP_1:  ['Southern Pine No.1', 1350, 825, 550000],
+                    SP_2:  ['Southern Pine No.2', 850, 525, 440000],
+                    DF_1:  ['Douglas Fir-Larch No.1 P&T', 1200, 1000, 580000],
+                    DF_2:  ['Douglas Fir-Larch No.2 P&T', 750, 700, 470000]
+                }[inp.sawnGrade] || ['Southern Pine No.1', 1350, 825, 550000];
+                return { name: T[0] + ' sawn timber (NDS Supp. Table 4D)', Fb: T[1], Fc: T[2], Emin: T[3],
+                         CM_Fb: 1.0, CM_Fc: 0.91, CM_E: 1.0,             // wet service, Table 4D
+                         CF_Fb: d > 12 ? Math.pow(12 / d, 1 / 9) : 1.0,  // size factor, Table 4D
+                         c: 0.8 };
+            }
+            const sp = inp.species === 'DF';
+            return { name: (sp ? 'Douglas Fir' : 'Southern Pine') + ' round timber pile (NDS Table 6A)',
+                     Fb: sp ? 2450 : 2400, Fc: sp ? 1250 : 1200, Emin: 790000,
+                     CM_Fb: 1.0, CM_Fc: 1.0, CM_E: 1.0,                  // pile values already wet service
+                     CF_Fb: d > 13.5 ? Math.pow(13.5 / d, 1 / 9) : 1.0,  // NDS 6.3.7
+                     c: 0.85 };
+        }
+
+        // ASCE 7-22 Ch.5 / FEMA P-55 flood loads on a single pile
+        function floodLoads(inp) {
+            if (inp.zone === 'none') return null;
+            const b = inp.d / 12;                     // ft
+            const gw = 64.0;                          // pcf saltwater
+            const g = 32.2;
+            const coastal = inp.zone !== 'AE';
+            const G = isNaN(inp.G) ? 0 : inp.G;
+            const BFE = isNaN(inp.BFE) ? G : inp.BFE;
+            const Ge = G - inp.erosion;               // eroded grade
+            let Esw;
+            if (!isNaN(inp.Esw)) Esw = inp.Esw;
+            else if (coastal) Esw = Ge + (BFE - Ge) / (1 + 0.7 * 0.78);   // BFE = Esw + 0.7Hb, Hb = 0.78ds (FEMA P-55)
+            else Esw = BFE;
+            const ds = Math.max(0, Esw - Ge);
+            const Hb = coastal ? 0.78 * ds : 0;
+            const V = !isNaN(inp.V) ? inp.V : (coastal ? Math.sqrt(g * ds) : ds / 1.0);
+            const local = !isNaN(inp.localScour) ? inp.localScour : 2 * b;
+            const S = local + inp.erosion;
+
+            // Breaking wave on pile, ASCE 7-22 Eq. 5.4-4: FD = 0.5 γw CD D Hb²
+            const CDb = inp.shape === 'square' ? 2.25 : 1.75;
+            const Dw = inp.shape === 'square' ? 1.4 * b : b;
+            const Fbrk = coastal ? 0.5 * gw * CDb * Dw * Hb * Hb / 1000 : 0;   // kips, at Esw
+
+            // Hydrodynamic drag, ASCE 7-22 Eq. 5.4-? / FEMA P-55 Eq. 8.5: F = 0.5 a ρ V² A
+            const a = !isNaN(inp.dragA) ? inp.dragA : (inp.shape === 'square' ? 2.0 : 1.2);
+            const Fdyn = 0.5 * a * (gw / g) * V * V * (b * ds) / 1000;          // kips, at ds/2
+
+            // Debris impact, FEMA P-55 Eq. 8.11: F = W V CI CO CD CB Rmax / (2 g Δt)
+            const CI = 1.0, CO = 0.8, CB = 1.0, Rmax = 0.8, dt = 0.03;
+            const CDd = Math.max(0, Math.min(1, (ds - 1) * 0.25));               // depth coeff: 0 @ ≤1 ft → 1.0 @ ≥5 ft
+            const Fdeb = inp.debrisOn ? inp.debrisW * V * CI * CO * CDd * CB * Rmax / (2 * g * dt) / 1000 : 0; // kips, at Esw
+
+            const scen = [];
+            if (coastal) scen.push({ key: 'brk', name: 'breaking wave', forces: [{ F: Fbrk, y: ds }] });
+            scen.push({ key: 'dyn', name: inp.debrisOn ? 'hydrodynamic + debris' : 'hydrodynamic',
+                        forces: [{ F: Fdyn, y: ds / 2 }].concat(inp.debrisOn ? [{ F: Fdeb, y: ds }] : []) });
+            return { coastal, G, BFE, Ge, Esw, ds, Hb, V, local, S, CDb, Dw, Fbrk, a, Fdyn, CDd, Fdeb, scen,
+                     kf: coastal ? 1.5 : 0.75, gw };
+        }
+
+        // Main engine — pure function of the input object
+        function pileDesign(inp) {
+            const b = inp.d;                               // in
+            const bft = b / 12;
+            const sp = sectionProps(inp.shape, b);
+            const Aft = sp.A / 144, perft = sp.per / 12;
+            const gs = inp.gammaEff / 1000;                // kcf
+            const gm = inp.gammaM / 1000;
+            const phiR = inp.phi * Math.PI / 180;
+            const Kp = (1 + Math.sin(phiR)) / (1 - Math.sin(phiR));
+            const delta = isNaN(inp.delta) ? inp.phi - 5 : inp.delta;
+            const tanD = Math.tan(delta * Math.PI / 180);
+            const api = apiSand(inp.phi);
+            const Nq = isNaN(inp.NqOv) ? api.Nq : inp.NqOv;
+            const gp = (isNaN(inp.pileUnitWt) ? (inp.pileType === 'concrete' ? 150 : 50) : inp.pileUnitWt) / 1000;
+            const flood = floodLoads(inp);
+            const tim = inp.pileType === 'timber' ? timberRef(inp) : null;
+            const fcp = inp.fc_prime;
+            const dfix = isNaN(inp.dfix) ? 5 * bft : inp.dfix;
+
+            // σ'v at depth z below the (possibly scoured) surface
+            function sig(z, submerged) {
+                if (submerged || z >= inp.dw) return submerged ? gs * z : gm * inp.dw + gs * (z - inp.dw);
+                return gm * z;
+            }
+            const clay = inp.soilType === 'clay';
+            // undrained shear strength (ksf) at depth z below the current surface, drop = soil removed (scour/erosion)
+            function su(z, drop) { return Math.min(inp.suTop + inp.suGrad * (z + (drop || 0)), inp.suMax) / 1000; }
+            function suAvg(L, drop) { let s = 0, n = 0; for (let z = 0.05; z < L; z += 0.1) { s += su(z, drop); n++; } return n ? s / n : su(0, drop); }
+            function skin(Le, K, submerged, drop) {
+                let Q = 0; const dz = 0.05;
+                for (let z = dz / 2; z < Le; z += dz) {
+                    if (clay) {   // API RP 2A alpha method: α = 0.5ψ^-0.5 (ψ ≤ 1), 0.5ψ^-0.25 (ψ > 1), α ≤ 1
+                        const c = su(z, drop), psi = c / Math.max(sig(z, submerged), 1e-6);
+                        const al = Math.min(1, psi <= 1 ? 0.5 / Math.sqrt(psi) : 0.5 / Math.pow(psi, 0.25));
+                        Q += al * c * perft * dz;
+                    } else Q += Math.min(K * sig(z, submerged) * tanD, api.fslim) * perft * dz;
+                }
+                return Q;
+            }
+            function endBearing(Le, submerged, drop) {
+                return clay ? 9 * su(Le, drop) * Aft : Math.min(Nq * sig(Le, submerged), api.qlim) * Aft;
+            }
+            // Broms short free-head pile in clay (top 1.5D ignored, 9 su D): returns required L for V, M at grade
+            function bromsClayL(V, M, FS, drop) {
+                V = Math.abs(V) * FS; M = Math.abs(M) * FS;
+                if (V < 1e-9 && M < 1e-9) return 0;
+                let L = 5;
+                for (let i = 0; i < 30; i++) {
+                    const c = suAvg(Math.max(L, 1.5 * bft + 1), drop);
+                    const f = V / (9 * c * bft);
+                    const Mmax = M + V * (1.5 * bft + 0.5 * f);
+                    const g = Math.sqrt(Mmax / (2.25 * c * bft));
+                    const Ln = 1.5 * bft + f + g;
+                    if (Math.abs(Ln - L) < 0.01) { L = Ln; break; }
+                    L = Ln;
+                }
+                return Math.min(L, 80);
+            }
+
+            // Broms short free-head pile in sand: Hu = 0.5 γ' D L³ Kp / (e + L)
+            function broms(forces, FS, drop) {
+                if (clay) {
+                    const H = forces.reduce((s, f) => s + f.F, 0);
+                    const M0 = forces.reduce((s, f) => s + f.F * f.y, 0);
+                    if (H <= 1e-9) return { H: 0, M0: 0, e: 0, Lreq: 0, f: 0, Mmax: 0 };
+                    const c = su(1.5 * bft + 2, drop), f = H / (9 * c * bft);
+                    return { H, M0, e: M0 / H, Lreq: bromsClayL(H, M0, FS, drop), f, Mmax: M0 + H * (1.5 * bft + 0.5 * f) };
+                }
+                const H = forces.reduce((s, f) => s + f.F, 0);
+                const M0 = forces.reduce((s, f) => s + f.F * f.y, 0);
+                if (H <= 1e-9) return { H: 0, M0: 0, e: 0, Lreq: 0, f: 0, Mmax: 0 };
+                const e = M0 / H;
+                let Lreq = 80;
+                for (let L = 0.5; L <= 80; L += 0.05) {
+                    if (0.5 * gs * bft * Math.pow(L, 3) * Kp / (e + L) >= FS * H) { Lreq = L; break; }
+                }
+                const f = 0.82 * Math.sqrt(H / (gs * bft * Kp));      // depth to max moment
+                return { H, M0, e, Lreq, f, Mmax: H * (e + 0.67 * f) };
+            }
+
+            // Broms equilibrium form, valid for any shear/moment pair at grade:
+            // 0.5 γ' D Kp L³ ≥ FS (|V| L + |M|)   (equals Hu(e+L) form when M = V e)
+            function bromsVM(V, M, FS, drop) {
+                if (clay) return bromsClayL(V, M, FS, drop);
+                V = Math.abs(V); M = Math.abs(M);
+                if (V < 1e-9 && M < 1e-9) return 0;
+                for (let L = 0.5; L <= 80; L += 0.05) if (0.5 * gs * bft * Math.pow(L, 3) * Kp >= FS * (V * L + M)) return L;
+                return 80;
+            }
+            // Top braced (pinned) at framing: propped cantilever fixed at depth dfix below scour line, pinned at top.
+            // Loads between scour line and framing (y measured above scour line). Wind at the top goes to the diaphragm.
+            function propped(forces, Ht) {
+                const Lp = Ht + dfix;
+                let R = 0;
+                forces.forEach(f => { const c = f.y + dfix; R += f.F * c * c * (3 * Lp - c) / (2 * Math.pow(Lp, 3)); });
+                const M = x => { // moment at height x above fixity point (x from 0..Lp), sagging +
+                    let m = -R * (Lp - x);
+                    forces.forEach(f => { const c = f.y + dfix; if (c > x) m += f.F * (c - x); });
+                    return m;
+                };
+                let Mmax = 0;
+                for (let x = 0; x <= Lp + 1e-9; x += 0.05) Mmax = Math.max(Mmax, Math.abs(M(x)));
+                const H = forces.reduce((s, f) => s + f.F, 0);
+                const Vg = H - R, Mg = M(dfix);
+                return { R, Mmax, H, Vg, Mg };
+            }
+
+            // Load combinations, ASCE 7-22 §2.4.1 / 2.4.2
+            const comps = (inp.D || inp.L || inp.Lr || inp.Wv || inp.Wh) ? true : false;
+            let combos = [];
+            if (comps) {
+                combos = [
+                    { id: '1', name: 'D', fD: 1, fL: 0, fLr: 0, fW: 0, CD: 0.9 },
+                    { id: '2', name: 'D + L', fD: 1, fL: 1, fLr: 0, fW: 0, CD: 1.0 },
+                    { id: '3', name: 'D + Lr', fD: 1, fL: 0, fLr: 1, fW: 0, CD: 1.25 },
+                    { id: '4', name: 'D + 0.75L + 0.75Lr', fD: 1, fL: 0.75, fLr: 0.75, fW: 0, CD: 1.25 },
+                    { id: '5', name: 'D + 0.6W', fD: 1, fL: 0, fLr: 0, fW: 0.6, CD: 1.6 },
+                    { id: '6', name: 'D + 0.75L + 0.75(0.6W) + 0.75Lr', fD: 1, fL: 0.75, fLr: 0.75, fW: 0.45, CD: 1.6 },
+                    { id: '7', name: '0.6D + 0.6W', fD: 0.6, fL: 0, fLr: 0, fW: 0.6, CD: 1.6 }
+                ];
+                if (flood) {
+                    const k = flood.kf, ks = flood.coastal ? '1.5Fa' : '0.75Fa';
+                    flood.scen.forEach(s => {
+                        [['5', 'D + 0.6W', 1, 0, 0, 0.6], ['6', 'D + 0.75L + 0.75(0.6W) + 0.75Lr', 1, 0.75, 0.75, 0.45],
+                         ['7', '0.6D + 0.6W', 0.6, 0, 0, 0.6]].forEach(c => {
+                            combos.push({ id: c[0] + 'F-' + s.key, name: c[1] + ' + ' + ks + ' (' + s.name + ')',
+                                          fD: c[2], fL: c[3], fLr: c[4], fW: c[5], CD: 1.6, flood: s, kf: k });
+                        });
+                    });
+                }
+            } else {
+                combos = [{ id: 'U', name: 'User-entered P, Hx/Hy at h (pre-factored)', user: true, CD: 1.0 }];
+            }
+
+            function evalCombo(c, LtipDesign) {
+                const isF = !!c.flood;
+                const drop = isF ? flood.S : 0;                 // ground lost to erosion + local scour
+                const top = inp.h + drop;                       // pile top above reference (scour bottom)
+                let P, forces = [];
+                if (c.user) {
+                    P = inp.P;
+                    const H = Math.sqrt(inp.Hx * inp.Hx + inp.Hy * inp.Hy);
+                    if (H > 0) forces.push({ F: H, y: top });
+                } else {
+                    P = c.fD * inp.D + c.fL * inp.L + c.fLr * inp.Lr + c.fW * inp.Wv;
+                    if (c.fW * inp.Wh > 0) forces.push({ F: c.fW * inp.Wh, y: top });
+                    if (isF) c.flood.forces.forEach(f => forces.push({ F: c.kf * f.F, y: f.y + flood.local }));
+                }
+                let br;
+                const braced = inp.topCond === 'braced';
+                if (braced) {
+                    const fl = forces.filter(f => f.y < top - 1e-6);       // flood loads on the pile shaft
+                    const Wtop = forces.filter(f => f.y >= top - 1e-6).reduce((s, f) => s + f.F, 0);
+                    const pr = propped(fl, top);
+                    const Lreq = bromsVM(pr.Vg, pr.Mg, inp.FSlat, drop);
+                    br = { H: pr.Vg, M0: pr.Mg, e: 0, Lreq, f: 0, Mmax: pr.Mmax, Rtop: pr.R, Wtop };
+                } else {
+                    br = broms(forces, inp.FSlat, drop);
+                    br.Rtop = 0; br.Wtop = 0;
+                }
+                const Ltip = isNaN(inp.Ltip) ? LtipDesign : inp.Ltip;
+                const Lav = Math.max(0, Ltip - drop);
+                const Ltot = Ltip + inp.h;
+                // pile self weight (buoyant below water)
+                const wl = isF ? Ltip + Math.max(0, flood.Esw - flood.G) : Math.max(0, Ltip - inp.dw);
+                const Lsub = Math.min(Ltot, wl);
+                const Wp = Aft * (gp * (Ltot - Lsub) + (gp - 0.064) * Lsub);
+                const fD = c.user ? 1 : c.fD;
+                const Pc = P + fD * Wp;
+
+                // structural
+                let st;
+                const fc = Math.max(P, 0) * 1000 / sp.A;
+                const fb = br.Mmax * 12000 / sp.S;
+                if (tim) {
+                    const CD = c.CD;
+                    const FcStar = tim.Fc * CD * tim.CM_Fc * inp.Ct;
+                    const EminP = tim.Emin * tim.CM_E * inp.Ct;
+                    const le = (braced ? inp.KeBr * top : inp.Ke * (top + dfix)) * 12;
+                    const sr = le / sp.deq;
+                    const FcE = 0.822 * EminP / (sr * sr);
+                    const al = FcE / FcStar;
+                    const Cp = (1 + al) / (2 * tim.c) - Math.sqrt(Math.pow((1 + al) / (2 * tim.c), 2) - al / tim.c);
+                    const FcP = FcStar * Cp;
+                    const FbP = tim.Fb * CD * tim.CM_Fb * inp.Ct * tim.CF_Fb;
+                    const ratio = fc >= FcE ? 99 : Math.pow(fc / FcP, 2) + fb / (FbP * (1 - fc / FcE));
+                    st = { fc, fb, FcP, FbP, FcE, Cp, sr, ratio, slenderOK: sr <= 50 };
+                } else {
+                    const Fc = 0.33 * fcp, Fb = 0.45 * Math.sqrt(fcp) * 1.5;
+                    st = { fc, fb, FcP: Fc, FbP: Fb, ratio: fc / Fc + fb / Fb, slenderOK: true };
+                }
+
+                // geotechnical
+                const Qs_c = skin(Lav, inp.Kc, isF, drop), Qb = endBearing(Lav, isF, drop), Qs_t = skin(Lav, inp.Kt, isF, drop);
+                const Qa_c = (Qs_c + Qb) / inp.FSc, Qa_t = Qs_t / inp.FSt;
+                const T = Pc < 0 ? -Pc : 0;
+                return {
+                    id: c.id, name: c.name, CD: c.CD, P, Wp, Pc, H: br.H, M0: br.M0, e: br.e, Mmax: br.Mmax, f: br.f,
+                    Rtop: br.Rtop, Wtop: br.Wtop, Lreq: br.Lreq, tipReq: br.Lreq + drop, Lav, drop,
+                    st, Qs_c, Qb, Qa_c, Qs_t, Qa_t, T,
+                    rStruct: st.ratio, rEmbed: Lav > 0 ? br.Lreq / Lav : (br.Lreq > 0 ? 99 : 0),
+                    rComp: Pc > 0 ? Pc / Qa_c : 0, rUplift: T > 0 ? (Qa_t > 0 ? T / Qa_t : 99) : 0
+                };
+            }
+
+            // design tip (if not given) = max required tip depth over all combos (iterate for self-weight effects)
+            let tipDesign = 0;
+            combos.forEach(c => { tipDesign = Math.max(tipDesign, evalCombo(c, 10).tipReq); });
+            tipDesign = Math.max(tipDesign, 5);
+            const rows = combos.map(c => evalCombo(c, tipDesign));
+            const gov = {};
+            ['rStruct', 'rEmbed', 'rComp', 'rUplift'].forEach(k => {
+                let best = rows[0];
+                rows.forEach(r => { if (r[k] > best[k]) best = r; });
+                gov[k] = { ratio: best[k], id: best.id, name: best.name };
+            });
+            return { sp, Kp, delta, api, Nq, gp, flood, tim, dfix, rows, gov,
+                     tipUsed: isNaN(inp.Ltip) ? tipDesign : inp.Ltip, tipGiven: !isNaN(inp.Ltip),
+                     tipReqMax: Math.max.apply(null, rows.map(r => r.tipReq)), comps };
+        }
+
+        function cls(r) { return r > 1.0 ? 'fail' : 'ok'; }
+        function f2(x, n) { return (x === undefined || isNaN(x)) ? '–' : x.toFixed(n === undefined ? 2 : n); }
+
+        function comboTable(res) {
+            let t = `<table class="combo"><tr><th>Combo</th><th>P (k)</th><th>Pile wt (k)</th><th>V grade (k)</th><th>M grade (k-ft)</th><th>Mmax (k-ft)</th><th>CD</th>
+                     <th>Fc' / Fb' (psi)</th><th>Struct.</th><th>L req / avail (ft)</th><th>Embed.</th><th>Comp. (k) dem/allow</th><th>Comp.</th><th>Uplift (k) dem/allow</th><th>Uplift</th></tr>`;
+            res.rows.forEach(r => {
+                t += `<tr><td style="text-align:left">${r.id}: ${r.name}</td><td>${f2(r.P)}</td><td>${f2(r.Wp)}</td><td>${f2(r.H)}</td><td>${f2(r.M0, 1)}</td><td>${f2(r.Mmax, 1)}</td><td>${r.CD}</td>
+                      <td>${f2(r.st.FcP, 0)} / ${f2(r.st.FbP, 0)}</td><td class="${cls(r.rStruct)}">${f2(r.rStruct)}</td>
+                      <td>${f2(r.Lreq, 1)} / ${f2(r.Lav, 1)}</td><td class="${cls(r.rEmbed)}">${f2(r.rEmbed)}</td>
+                      <td>${f2(Math.max(r.Pc, 0))} / ${f2(r.Qa_c)}</td><td class="${cls(r.rComp)}">${f2(r.rComp)}</td>
+                      <td>${f2(r.T)} / ${f2(r.Qa_t)}</td><td class="${cls(r.rUplift)}">${f2(r.rUplift)}</td></tr>`;
+            });
+            return t + '</table>';
+        }
+        function govTable(res) {
+            const g = res.gov, lbl = { rStruct: 'Structural (NDS 3.9.2 / ASD)', rEmbed: 'Lateral embedment (Broms)', rComp: 'Axial compression (skin + end bearing)', rUplift: 'Uplift / pullout (skin + pile weight)' };
+            let t = '<table><tr><th>Check</th><th>Governing ratio</th><th>Combo</th><th>Result</th></tr>';
+            Object.keys(lbl).forEach(k => {
+                t += `<tr><td>${lbl[k]}</td><td class="${cls(g[k].ratio)}">${f2(g[k].ratio)}</td><td>${g[k].id}: ${g[k].name}</td><td>${g[k].ratio > 1 ? '❌ FAILS' : '✅ OK'}</td></tr>`;
+            });
+            return t + '</table>';
+        }
+        function floodTable(fl) {
+            if (!fl) return '<p>No flood zone selected — flood combinations not run.</p>';
+            return `<table><tr><th>Item</th><th>Value</th></tr>
+                <tr><td>Ground (LAG) / eroded grade</td><td>${f2(fl.G)} / ${f2(fl.Ge)} ft</td></tr>
+                <tr><td>BFE / stillwater Esw</td><td>${f2(fl.BFE)} / ${f2(fl.Esw)} ft</td></tr>
+                <tr><td>Stillwater depth ds</td><td>${f2(fl.ds)} ft</td></tr>
+                <tr><td>Breaking wave height Hb = 0.78 ds</td><td>${f2(fl.Hb)} ft</td></tr>
+                <tr><td>Flood velocity V</td><td>${f2(fl.V, 1)} ft/s</td></tr>
+                <tr><td>Breaking wave FD = 0.5 γw CD D Hb² (CD ${fl.CDb}, D ${f2(fl.Dw)} ft) @ Esw</td><td>${f2(fl.Fbrk)} kips</td></tr>
+                <tr><td>Hydrodynamic F = 0.5 a ρ V² A (a ${fl.a}) @ ds/2</td><td>${f2(fl.Fdyn)} kips</td></tr>
+                <tr><td>Debris impact (W V CI CO CD CB Rmax / 2gΔt, CD ${f2(fl.CDd)}) @ Esw</td><td>${f2(fl.Fdeb)} kips</td></tr>
+                <tr><td>Local scour + general erosion (applied to flood combos)</td><td>${f2(fl.local)} + ${f2(fl.S - fl.local)} = ${f2(fl.S)} ft</td></tr>
+                <tr><td>Fa factor (ASCE 7-22 §2.4.2)</td><td>${fl.kf}</td></tr></table>`;
+        }
+        function renderAdvanced(inp, res) {
+            const t = res.tim;
+            let h = `<h2>Advanced Checks — ASCE 7-22 ASD Combinations</h2>
+                <p>Section ${inp.shape} ${inp.d}": A ${f2(res.sp.A, 1)} in², S ${f2(res.sp.S, 1)} in³, I ${f2(res.sp.I, 0)} in⁴, perimeter ${f2(res.sp.per, 1)} in.
+                ${t ? t.name + ': Fb ' + t.Fb + ', Fc ' + t.Fc + ', Emin ' + t.Emin + ' psi; CM(Fc) ' + t.CM_Fc + ', CF(Fb) ' + f2(t.CF_Fb, 3) + ', Ct ' + inp.Ct + ', Ke ' + inp.Ke + ', fixity ' + f2(res.dfix, 1) + ' ft.' : 'Concrete (preliminary ASD).'}
+                Soil: ${inp.soilType === 'clay' ? 'CLAY su ' + inp.suTop + ' psf + ' + inp.suGrad + ' psf/ft (cap ' + inp.suMax + '), α method, 9su end bearing, Broms clay; ' : ''}Kp ${f2(res.Kp)}, δ ${res.delta}°, Nq ${res.Nq}, f<sub>s,lim</sub> ${res.api.fslim} ksf, q<sub>lim</sub> ${res.api.qlim} ksf. Pile tip ${f2(res.tipUsed, 1)} ft below grade ${res.tipGiven ? '(input)' : '(= required, design mode)'}; max required tip ${f2(res.tipReqMax, 1)} ft.</p>`;
+            if (inp.topCond === 'braced') {
+                const mx = res.rows.reduce((a, r) => Math.max(a, (r.Rtop || 0) + (r.Wtop || 0)), 0);
+                h += `<p><strong>Top braced at floor framing:</strong> pile modeled as propped cantilever (pinned top, fixed ${f2(res.dfix, 1)} ft below scour line), le = ${inp.KeBr} × (scour line to framing). Lateral wind at the top and the flood prop reaction go to the floor diaphragm — max per-pile top reaction ${f2(mx)} k must be resisted by the building's lateral system (shear walls / knee braces / cross bracing). Embedment checked for V and M at the scour line (Broms equilibrium, FS ${inp.FSlat}).</p>`;
+            }
+            if (!res.comps) h += '<p><em>No load components entered — showing the original user case only. Enter D, L, Lr, W in the Advanced section to run all ASCE 7 combinations.</em></p>';
+            h += govTable(res) + '<h3>Flood Loads</h3>' + floodTable(res.flood) + '<h3>All Combinations</h3>' + comboTable(res);
+            return h;
+        }
+        function renderCalcSheet(inp, res) {
+            const now = new Date();
+            const inRows = [
+                ['Pile', `${inp.pileType} ${inp.shape} ${inp.d}" ${res.tim ? '— ' + res.tim.name : "f'c " + inp.fc_prime + ' psi'}`],
+                ['Height of pile top above grade h', inp.h + ' ft'],
+                ['Loads D / L / Lr / Wv / Wh (nominal)', [inp.D, inp.L, inp.Lr, inp.Wv, inp.Wh].join(' / ') + ' kips'],
+                ['User P / Hx / Hy (single case)', [inp.P, inp.Hx, inp.Hy].join(' / ') + ' kips'],
+                ['Soil type', inp.soilType === 'clay' ? `Clay: su ${inp.suTop} psf + ${inp.suGrad} psf/ft, cap ${inp.suMax} psf (α method, 9su, Broms clay)` : 'Sand (β method, Nq, Broms sand)'],
+                ["Soil γ' / γm / φ / δ / dw", `${inp.gammaEff} pcf / ${inp.gammaM} pcf / ${inp.phi}° / ${res.delta}° / ${inp.dw} ft`],
+                ['K comp / K tension / Nq', `${inp.Kc} / ${inp.Kt} / ${res.Nq}`],
+                ['FS comp / uplift / lateral', `${inp.FSc} / ${inp.FSt} / ${inp.FSlat}`],
+                ['Pile tip below grade', `${f2(res.tipUsed, 1)} ft ${res.tipGiven ? '(input)' : '(design)'}`],
+                ['Pile top condition', inp.topCond === 'braced' ? `Braced/pinned at framing (Ke ${inp.KeBr}, le = scour line to framing); propped cantilever fixed ${f2(res.dfix, 1)} ft below scour line; wind to diaphragm` : 'Free top (cantilever)'],
+                ['Column stability Ke / fixity / Ct', `${inp.Ke} / ${f2(res.dfix, 1)} ft / ${inp.Ct}`],
+                ['Flood zone / BFE / grade', `${inp.zone} / ${f2(inp.BFE, 2)} / ${f2(inp.G, 2)} ft`]
+            ].map(r => `<tr><td style="text-align:left">${r[0]}</td><td style="text-align:left">${r[1]}</td></tr>`).join('');
+            return `<h1 style="color:black">PRELIMINARY — Pile Design Calculation</h1>
+                <p><strong>Project:</strong> ${inp.projName || '(unnamed)'} &nbsp; <strong>Date:</strong> ${now.toLocaleDateString()} &nbsp; <strong>Status:</strong> PRELIMINARY — not for construction</p>
+                <h2>Inputs</h2><table><tr><th>Item</th><th>Value</th></tr>${inRows}</table>
+                <h2>Governing Results</h2>${govTable(res)}
+                <h2>Flood Loads</h2>${floodTable(res.flood)}
+                <h2>Load Combinations</h2>${comboTable(res)}
+                <h2>References</h2><ul style="font-size:9pt">
+                <li>ASCE 7-22 §2.4.1 ASD load combinations; §2.4.2 flood loads (1.5Fa V/Coastal A, 0.75Fa A zones); Ch. 5 flood loads (§5.4.4 breaking wave on piles, §5.4.3 hydrodynamic, §5.4.5 impact).</li>
+                <li>FEMA P-55 Coastal Construction Manual, Ch. 8: Hb = 0.78ds, local scour ≈ 2D, debris impact Eq. 8.11.</li>
+                <li>AWC NDS 2018: §3.7 column stability Cp, §3.9.2 combined bending + compression, Table 4D sawn timbers, Table 6A round piles, CD per Table 2.3.2.</li>
+                <li>Broms (1964) lateral resistance of piles in cohesionless soil (short free-head pile; max moment depth 0.82√(H/γ'DKp)).</li>
+                <li>API RP 2A-WSD §6.4.2 α method for clay (α = 0.5ψ^-0.5 / 0.5ψ^-0.25), end bearing 9su; Broms (1964) lateral resistance in cohesive soil (9suD, top 1.5D neglected).</li>
+                <li>API RP 2A-WSD Table 6.4.3-1 limiting skin friction and end bearing for sand; β = K·tanδ effective-stress method.</li></ul>
+                <p style="font-size:9pt"><strong>PRELIMINARY.</strong> Loads per pile are user-supplied. Geotechnical values assumed without site borings. Review and seal by a licensed engineer required.</p>`;
         }
 
         // Run once on load with defaults
