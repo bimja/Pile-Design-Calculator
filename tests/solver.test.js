@@ -40,8 +40,10 @@ t('tapered 14" round (8.5" tip) needs more embedment than the 14x14 square (memo
   assert.ok(r.ok && r.tip >= 39 && r.tip <= 45, 'base ' + r.tip);
   assert.ok(rs.ok && rs.tip >= 45 && rs.tip <= 51, 'soft ' + rs.tip);
 });
-t('larger pile never needs more embedment (monotonic in size)', () => {
-  let last = Infinity; [12, 14, 16, 18].forEach(d => { const s = S({ d }); assert.ok(s.ok); assert.ok(s.tip <= last); last = s.tip; });
+t('larger pile never needs more embedment (monotonic in size; 12x12 debris pile fails bending at CD 1.6)', () => {
+  const s12 = S({ d: 12 }); assert.ok(!s12.ok && s12.checks.rStruct.ratio > 1, 'debris-struck 12x12 at default CD 1.6');
+  assert.ok(S({ d: 12, impactCD: 2.0 }).ok);
+  let last = Infinity; [14, 16, 18].forEach(d => { const s = S({ d }); assert.ok(s.ok); assert.ok(s.tip <= last); last = s.tip; });
 });
 t('impossible case reports FAIL with the governing check', () => {
   const s = S({ D: 200, maxEmbed: 40 });

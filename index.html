@@ -86,8 +86,8 @@
 
         <label>Pile Shape</label>
         <select id="shape" onchange="togglePileOptions()">
-            <option value="round" selected>Round (d = diameter)</option>
-            <option value="square">Square (d = side width, e.g. 12x12 → 12; timber = sawn timber 5x5 and larger)</option>
+            <option value="round">Round (d = diameter) — alternate</option>
+            <option value="square" selected>Square (d = side width, e.g. 12x12 → 12; timber = sawn timber 5x5 and larger)</option>
         </select>
         
         <!-- Timber Options -->
@@ -154,9 +154,33 @@
                 <div><label>Floor Live L (kips)</label><input type="number" id="Lld" value="0" step="0.1"></div>
                 <div><label>Roof Live Lr (kips)</label><input type="number" id="Lrld" value="0" step="0.1"></div>
                 <div><label>Wind vertical Wv (kips, strength level; uplift = negative)</label><input type="number" id="Wvld" value="0" step="0.1"></div>
-                <div><label>Wind lateral Wh at pile top (kips, strength level)</label><input type="number" id="Whld" value="0" step="0.1"></div>
+                <div><label>Wind lateral Wh — this pile's share of building wind at the floor (kips, strength level)</label><input type="number" id="Whld" value="0" step="0.1"></div>
+                <div><label>Overturning axial at this pile Wot (kips, strength; + compression leeward, − uplift windward; 0 interior)</label><input type="number" id="Wot" value="0" step="0.1"></div>
+                <div><label>Wind on exposed pile: qz incl. Kd (psf, strength; 0 = ignore)</label><input type="number" id="qzPile" value="0" step="0.5"></div>
+                <div><label>Pile force coeff. Cf (blank = 1.3 square / 0.7 round, ASCE 7-22 Fig. 29.4-1)</label><input type="number" id="CfPile" value="" step="0.05"></div>
                 <div><label>Pile unit weight (pcf; blank = 50 timber / 150 concrete)</label><input type="number" id="pileUnitWt" value="" step="1"></div>
             </div>
+
+            <h3>Building Wind Helper (optional) — fills Wh, Wot and pile qz</h3>
+            <p style="font-size:0.85em;">ASCE 7-22 directional procedure (Ch. 27), G 0.85, windward wall Cp 0.8 with q<sub>z</sub>, leeward wall Cp by L/B, roof Cp (Fig. 27.3-1, wind normal to ridge). Wind normal to the B face; piles in rows (along wind) × lines (across wind).</p>
+            <div class="grid2">
+                <div><label>Basic wind speed V (mph)</label><input type="number" id="bwV" value="143" step="1"></div>
+                <div><label>Exposure</label><select id="bwExp"><option value="B">B</option><option value="C" selected>C</option><option value="D">D</option></select></div>
+                <div><label>Mean roof height above grade h (ft)</label><input type="number" id="bwh" value="41" step="0.5"></div>
+                <div><label>Bottom of floor framing above grade hB (ft)</label><input type="number" id="bwhB" value="10" step="0.5"></div>
+                <div><label>qh override incl. Kd (psf; blank = compute from V, exposure, h)</label><input type="number" id="bwQh" value="" step="0.5"></div>
+                <div><label>Kd / Kzt / Ke</label><input type="text" id="bwK" value="0.85/1.0/1.0"></div>
+                <div><label>Building width B normal to wind (ft)</label><input type="number" id="bwB" value="55" step="1"></div>
+                <div><label>Building depth L along wind (ft; roof spans L)</label><input type="number" id="bwL" value="25" step="1"></div>
+                <div><label>Roof type</label><select id="bwRoof"><option value="gable" selected>Gable (wind normal to ridge)</option><option value="hip">Hip (gable coefficients, conservative)</option><option value="flat">Flat / low slope</option></select></div>
+                <div><label>Roof pitch (x / 12)</label><input type="number" id="bwPitch" value="5" step="0.5"></div>
+                <div><label>Pile rows along wind × lines across wind</label><input type="text" id="bwGrid" value="3x6"></div>
+                <div><label>Pile row spacing along wind (ft)</label><input type="number" id="bwRowSp" value="11.95" step="0.05"></div>
+                <div><label>Share method</label><select id="bwMethod"><option value="rigid">Rigid diaphragm — equal share</option><option value="trib" selected>Flexible — tributary by line (interior line)</option></select></div>
+                <div><label>This pile's position (sets sign of Wot)</label><select id="bwPos"><option value="interior" selected>Interior row (Wot = 0)</option><option value="windward">Windward end row (uplift −)</option><option value="leeward">Leeward end row (compression +)</option></select></div>
+            </div>
+            <button type="button" onclick="applyBuildingWind()" style="background:#2a6;">Compute building wind → fill Wh / Wot / qz</button>
+            <div id="bwOut" style="font-size:0.85em;"></div>
 
             <h3>Geotechnical</h3>
             <div class="grid2">
@@ -183,11 +207,12 @@
             <div class="grid2">
                 <div><label>Depth to fixity below (scoured) grade (ft; blank = 5d)</label><input type="number" id="dfix" value="" step="0.5"></div>
                 <div><label>Effective length factor Ke (2.1 free-top cantilever)</label><input type="number" id="Ke" value="2.1" step="0.1"></div>
-                <div><label>Pile top condition</label>
+                <div><label>Braced to grade (knee / X bracing from floor framing to pile near grade)</label>
                     <select id="topCond">
-                        <option value="free" selected>Free top (cantilever, current behavior)</option>
-                        <option value="braced">Top braced / pinned at floor framing (diaphragm takes translation)</option>
+                        <option value="free" selected>No — free cantilever from floor to point of fixity (wind share + flood)</option>
+                        <option value="braced">Yes — top pinned at floor framing; wind share enters at the brace foot</option>
                     </select></div>
+                <div><label>Brace foot height above grade (ft)</label><input type="number" id="braceFoot" value="1" step="0.5"></div>
                 <div><label>Ke for braced top (NDS App. G: 1.0 pinned, 0.8 fixed-base)</label><input type="number" id="KeBr" value="1.0" step="0.1"></div>
                 <div><label>Temperature factor Ct</label><input type="number" id="Ct" value="1.0" step="0.05"></div>
             </div>
@@ -208,8 +233,12 @@
                 <div><label>General erosion (ft)</label><input type="number" id="erosion" value="0" step="0.5"></div>
                 <div><label>Local scour (ft; blank = 2d per FEMA P-55)</label><input type="number" id="localScour" value="" step="0.5"></div>
                 <div><label>Hydrodynamic drag coeff. a (2.0 square / 1.2 round typ.)</label><input type="number" id="dragA" value="" step="0.05"></div>
-                <div><label><input type="checkbox" id="debrisOn" checked> Include debris impact (FEMA P-55)</label></div>
+                <div><label><input type="checkbox" id="debrisOn"> This pile takes debris impact (apply to one critical pile only)</label></div>
                 <div><label>Debris weight W (lb)</label><input type="number" id="debrisW" value="1000" step="100"></div>
+                <div><label>Structure coeff. CStr (blank = 0.2 timber pile / 0.4 concrete pile, FEMA P-55)</label><input type="number" id="CStr" value="" step="0.05"></div>
+                <div><label>Blockage coeff. CB (1.0 no upstream screening)</label><input type="number" id="CB" value="1.0" step="0.1"></div>
+                <div><label>Load duration CD for debris combos (default 1.6; editable)</label><input type="number" id="impactCD" value="1.6" step="0.1">
+                    <div style="font-size:0.8em;color:#555">NDS Table 2.3.2: the impact factor CD = 2.0 is not permitted for members pressure-treated with waterborne preservatives to marine (heavy) retentions, which is typical for coastal timber piles. Use 2.0 only for untreated or other qualifying piles.</div></div>
             </div>
         </details>
         
@@ -224,7 +253,7 @@
         
         <div class="note no-print">
             <strong>Notes &amp; Limitations:</strong><br>
-            • Tributary loads are per pile (user-provided; calculate separately from wind/tributary area using ASCE 7).<br>
+            • Tributary loads are per pile. The optional Building Wind Helper fills the per-pile wind share Wh, overturning axial Wot and pile qz (ASCE 7-22 directional); manual entry still works.<br>
             • Lateral capacity uses Broms method (free-head pile in cohesionless sand).<br>
             • Structural check: combined axial + bending (ASD).<br>
             • Timber: Wet service values.<br>
@@ -239,7 +268,7 @@
         function togglePileOptions() {
             const pileType = document.getElementById('pileType').value;
             const shapeEl = document.getElementById('shape');
-            const shape = shapeEl ? shapeEl.value : 'round';
+            const shape = shapeEl ? shapeEl.value : 'square';
             document.getElementById('timberOptions').style.display = pileType === 'timber' ? 'block' : 'none';
             document.getElementById('concreteOptions').style.display = pileType === 'concrete' ? 'block' : 'none';
             const r = document.getElementById('roundTimberOptions'), s = document.getElementById('sawnTimberOptions');
@@ -283,7 +312,7 @@
             let phi = parseFloat(document.getElementById('phi').value);       // deg
             let pileType = document.getElementById('pileType').value;
             let d_trial = parseFloat(document.getElementById('d_trial').value) || 12; // inches
-            let shape = strVal('shape', 'round') === 'square' ? 'square' : 'round';
+            let shape = strVal('shape', 'square') === 'square' ? 'square' : 'round';
 
             let H = Math.sqrt(Hx*Hx + Hy*Hy); // total lateral kips
             let M = H * h;                    // kip-ft
@@ -397,10 +426,12 @@
                 projName: strVal('projName', ''),
                 P: numVal('P', 0), Hx: numVal('Hx', 0), Hy: numVal('Hy', 0), h: numVal('h', 0),
                 gammaEff: numVal('gamma', 55), phi: numVal('phi', 30),
-                pileType: pileType, shape: strVal('shape', 'round') === 'square' ? 'square' : 'round',
+                pileType: pileType, shape: strVal('shape', 'square') === 'square' ? 'square' : 'round',
                 species: strVal('species', 'SP'), sawnGrade: strVal('sawnGrade', 'SP_1'),
                 fc_prime: numVal('fc_prime', 5000), d: numVal('d_trial', 12),
                 D: numVal('Dld', 0), L: numVal('Lld', 0), Lr: numVal('Lrld', 0), Wv: numVal('Wvld', 0), Wh: numVal('Whld', 0),
+                Wot: numVal('Wot', 0), qzPile: numVal('qzPile', 0), CfPile: numVal('CfPile', NaN), braceFoot: numVal('braceFoot', 1),
+                CStr: numVal('CStr', NaN), CB: numVal('CB', 1.0), impactCD: numVal('impactCD', 1.6), bw: lastBW,
                 pileUnitWt: numVal('pileUnitWt', NaN),
                 Ltip: numVal('Ltip', NaN), dw: numVal('dw', 0), gammaM: numVal('gammaM', 110), delta: numVal('delta', NaN),
                 Kc: numVal('Kc', 1.0), Kt: numVal('Kt', 0.8), FSc: numVal('FSc', 2.5), FSt: numVal('FSt', 3.0), FSlat: numVal('FSlat', 2.0),
@@ -409,12 +440,81 @@
                 zone: ['AE', 'CA', 'VE'].indexOf(strVal('zone', 'none')) >= 0 ? strVal('zone', 'none') : 'none',
                 BFE: numVal('BFE', NaN), G: numVal('Gelev', NaN), Esw: numVal('Esw', NaN), V: numVal('Vel', NaN),
                 erosion: numVal('erosion', 0), localScour: numVal('localScour', NaN), dragA: numVal('dragA', NaN),
-                debrisOn: boolVal('debrisOn', true), debrisW: numVal('debrisW', 1000),
+                debrisOn: boolVal('debrisOn', false), debrisW: numVal('debrisW', 1000),
                 dTip: numVal('dTip', NaN),
                 embedMode: strVal('embedMode', 'auto') === 'manual' ? 'manual' : 'auto',
                 maxLen: numVal('maxLen', 40), lenMode: strVal('lenMode', 'advisory') === 'hard' ? 'hard' : 'advisory',
                 minEmbed: numVal('minEmbed', 5), maxEmbed: numVal('maxEmbed', 80), embStep: numVal('embStep', 0.5)
             };
+        }
+
+
+        // ===================== BUILDING WIND HELPER (ASCE 7-22 directional, Ch. 26–27) =====================
+        let lastBW = null;
+        const EXPO = { B: { a: 7.5, zg: 3280 }, C: { a: 9.8, zg: 2460 }, D: { a: 11.5, zg: 1935 } };
+        function Kz7_22(z, exp) { const e = EXPO[exp] || EXPO.C; z = Math.max(z, 15); return 2.41 * Math.pow(Math.min(z, e.zg) / e.zg, 2 / e.a); }
+        function roofCpWW(theta, hL) {   // Fig. 27.3-1, windward roof (neg, pos) for θ 10–30°, interpolated in θ and h/L
+            const tab = { 0.25: { 10: [-0.7, -0.18], 15: [-0.5, 0.0], 20: [-0.3, 0.2], 25: [-0.2, 0.3], 30: [-0.2, 0.3] },
+                          0.5:  { 10: [-0.9, -0.18], 15: [-0.7, -0.18], 20: [-0.4, 0.0], 25: [-0.3, 0.2], 30: [-0.2, 0.2] },
+                          1.0:  { 10: [-1.3, -0.18], 15: [-1.0, -0.18], 20: [-0.7, -0.18], 25: [-0.5, 0.0], 30: [-0.3, 0.2] } };
+            const th = Math.min(Math.max(theta, 10), 30), hl = Math.min(Math.max(hL, 0.25), 1.0);
+            const at = k => { const ts = [10, 15, 20, 25, 30]; let i = 0; while (i < 3 && th > ts[i + 1]) i++;
+                const t = (th - ts[i]) / 5; return [0, 1].map(j => tab[k][ts[i]][j] + (tab[k][ts[i + 1]][j] - tab[k][ts[i]][j]) * t); };
+            const ks = [0.25, 0.5, 1.0]; let i = hl <= 0.5 ? 0 : 1; const u = (hl - ks[i]) / (ks[i + 1] - ks[i]);
+            const A = at(ks[i]), B = at(ks[i + 1]); return [0, 1].map(j => A[j] + (B[j] - A[j]) * u);
+        }
+        function lwWallCp(LB) { return LB <= 1 ? -0.5 : LB <= 2 ? -0.5 + 0.2 * (LB - 1) : LB <= 4 ? -0.3 + 0.05 * (LB - 2) : -0.2; }
+        // o: { V, exp, h, hB, hF (floor = pile top above grade), qh (override, incl Kd), Kd, Kzt, Ke, B, L, roof, pitch, rows, lines, rowSp, method, pos }
+        function buildingWind(o) {
+            const Kd = o.Kd || 0.85, Kzt = o.Kzt || 1.0, Ke = o.Ke || 1.0, G = 0.85;
+            const qNoKd = z => 0.00256 * Kz7_22(z, o.exp) * Kzt * Ke * o.V * o.V;
+            const scale = isFinite(o.qh) && o.qh > 0 ? o.qh / (qNoKd(o.h) * Kd) : 1;      // honor a qh override
+            const q = z => qNoKd(z) * Kd * scale;                                         // psf incl. Kd
+            const qh = q(o.h);
+            const theta = o.roof === 'flat' ? 0 : Math.atan(o.pitch / 12) * 180 / Math.PI;
+            const rise = o.roof === 'flat' ? 0 : (o.L / 2) * o.pitch / 12;
+            const eave = o.h - rise / 2;
+            let Fww = 0, Mww = 0;
+            for (let z = o.hB; z < eave - 1e-9; z += 0.1) { const zz = Math.min(z + 0.1, eave), zm = (z + zz) / 2, f = q(zm) * G * 0.8 * o.B * (zz - z); Fww += f; Mww += f * zm; }
+            const cpl = lwWallCp(o.L / o.B);
+            const Flw = qh * G * (-cpl) * o.B * (eave - o.hB), Mlw = Flw * (o.hB + eave) / 2;
+            let cww = 0, clw = 0, Froof = 0;
+            if (rise > 0) { cww = roofCpWW(theta, o.h / o.L)[1]; clw = -0.6; Froof = qh * G * (cww - clw) * o.B * rise; }
+            const Mroof = Froof * (eave + rise / 2);
+            const V = (Fww + Flw + Froof) / 1000;                                        // kips, strength
+            const n = o.rows * o.lines;
+            const shareRigid = V / n;
+            const shareTrib = o.lines > 1 ? V / (o.lines - 1) / o.rows : V / o.rows;    // interior line, flexible diaphragm
+            const share = o.method === 'rigid' ? shareRigid : shareTrib;
+            // overturning about the floor framing (pile tops); end-row axial from rigid-body rotation over equally spaced rows
+            const hF = isFinite(o.hF) ? o.hF : o.hB;
+            const M = ((Mww + Mlw + Mroof) / 1000) - V * hF;
+            let sy2 = 0; for (let i = 0; i < o.rows; i++) { const y = (i - (o.rows - 1) / 2) * o.rowSp; sy2 += y * y; }
+            const yEnd = (o.rows - 1) / 2 * o.rowSp;
+            const OT = sy2 > 0 ? M * yEnd / sy2 / o.lines : 0;
+            const Wot = o.pos === 'windward' ? -OT : o.pos === 'leeward' ? OT : 0;
+            const zb = o.hB + 0.25 * (o.h - o.hB), qzPile = q(zb);                      // §27.3.1.1.2: elements below the floor at hB + 0.25(h − hB)
+            return { qh, Kz: Kz7_22(o.h, o.exp), theta, rise, eave, Fww: Fww / 1000, Flw: Flw / 1000, Froof: Froof / 1000, cpl, cww, clw, V,
+                     n, shareRigid, shareTrib, share, M, OT, Wot, zb, qzPile, o };
+        }
+        function applyBuildingWind() {
+            const k = (strVal('bwK', '0.85/1.0/1.0')).split('/').map(parseFloat);
+            const g = (strVal('bwGrid', '3x6')).toLowerCase().split('x').map(x => parseInt(x, 10));
+            const o = { V: numVal('bwV', 143), exp: strVal('bwExp', 'C'), h: numVal('bwh', 30), hB: numVal('bwhB', 10), hF: numVal('h', 10),
+                        qh: numVal('bwQh', NaN), Kd: k[0], Kzt: k[1], Ke: k[2], B: numVal('bwB', 50), L: numVal('bwL', 30),
+                        roof: strVal('bwRoof', 'gable'), pitch: numVal('bwPitch', 5), rows: g[0] || 3, lines: g[1] || 3, rowSp: numVal('bwRowSp', 12),
+                        method: strVal('bwMethod', 'trib'), pos: strVal('bwPos', 'interior') };
+            const r = buildingWind(o); lastBW = r;
+            document.getElementById('Whld').value = r.share.toFixed(2);
+            document.getElementById('Wot').value = r.Wot.toFixed(2);
+            document.getElementById('qzPile').value = r.qzPile.toFixed(1);
+            document.getElementById('bwOut').innerHTML = bwSummary(r);
+            calculate();
+        }
+        function bwSummary(r) {
+            return `qh ${f2(r.qh, 1)} psf (Kz ${f2(r.Kz, 3)}, incl. Kd); θ ${f2(r.theta, 1)}°, eave ${f2(r.eave, 1)} ft. Base shear V = ww wall ${f2(r.Fww, 1)} + lw wall ${f2(r.Flw, 1)} (Cp ${f2(r.cpl)}) + roof ${f2(r.Froof, 1)} (Cp ${f2(r.cww)} / ${f2(r.clw)}) = <b>${f2(r.V, 1)} k</b> (strength).
+                Per pile: rigid ${f2(r.shareRigid)} k, tributary interior line ${f2(r.shareTrib)} k → <b>Wh ${f2(r.share)} k</b> (${r.o.method}).
+                Overturning about floor M ${f2(r.M, 0)} k-ft → end-row axial <b>±${f2(r.OT)} k</b> (this pile: Wot ${f2(r.Wot)} k, ${r.o.pos}). Pile qz at ${f2(r.zb, 1)} ft = ${f2(r.qzPile, 1)} psf.`;
         }
 
         // API RP 2A (Table 6.4.3-1) design parameters for cohesionless soil, by friction angle
@@ -479,16 +579,21 @@
             const a = !isNaN(inp.dragA) ? inp.dragA : (inp.shape === 'square' ? 2.0 : 1.2);
             const Fdyn = 0.5 * a * (gw / g) * V * V * (b * ds) / 1000;          // kips, at ds/2
 
-            // Debris impact, FEMA P-55 Eq. 8.11: F = W V CI CO CD CB Rmax / (2 g Δt)
-            const CI = 1.0, CO = 0.8, CB = 1.0, Rmax = 0.8, dt = 0.03;
-            const CDd = Math.max(0, Math.min(1, (ds - 1) * 0.25));               // depth coeff: 0 @ ≤1 ft → 1.0 @ ≥5 ft
-            const Fdeb = inp.debrisOn ? inp.debrisW * V * CI * CO * CDd * CB * Rmax / (2 * g * dt) / 1000 : 0; // kips, at Esw
+            // Debris impact, FEMA P-55 Eq. 8.9: Fi = W V CD CB CStr  (= ASCE 7-22 C5.4.5: π W V CI CO CD CB Rmax / (2 g Δt),
+            // with CI 1.0, CO 0.8, Δt 0.03 s and Rmax for the building's natural period folded into CStr).
+            // CD (P-55 Table 8-3): Zone V / floodway 1.0; A zones by stillwater depth (0 @ ≤1 ft … 1.0 @ ≥5 ft).
+            const CI = 1.0, CO = 0.8, dt = 0.03;
+            const CB = isFinite(inp.CB) ? inp.CB : 1.0;
+            const CStr = isFinite(inp.CStr) ? inp.CStr : (inp.pileType === 'concrete' ? 0.4 : 0.2);
+            const Rmax = CStr * 2 * g * dt / (Math.PI * CI * CO);               // implied response ratio (info only)
+            const CDd = inp.zone === 'VE' ? 1.0 : Math.max(0, Math.min(1, (ds - 1) * 0.25));
+            const Fdeb = inp.debrisOn ? inp.debrisW * V * CDd * CB * CStr / 1000 : 0; // kips, at Esw
 
             const scen = [];
             if (coastal) scen.push({ key: 'brk', name: 'breaking wave', forces: [{ F: Fbrk, y: ds }] });
-            scen.push({ key: 'dyn', name: inp.debrisOn ? 'hydrodynamic + debris' : 'hydrodynamic',
+            scen.push({ key: 'dyn', name: inp.debrisOn ? 'hydrodynamic + debris' : 'hydrodynamic', debris: !!inp.debrisOn,
                         forces: [{ F: Fdyn, y: ds / 2 }].concat(inp.debrisOn ? [{ F: Fdeb, y: ds }] : []) });
-            return { coastal, G, BFE, Ge, Esw, ds, Hb, V, local, S, CDb, Dw, Fbrk, a, Fdyn, CDd, Fdeb, scen,
+            return { coastal, G, BFE, Ge, Esw, ds, Hb, V, local, S, CDb, Dw, Fbrk, a, Fdyn, CDd, Fdeb, CB, CStr, CI, CO, Rmax, dt, debris: !!inp.debrisOn, scen,
                      kf: coastal ? 1.5 : 0.75, gw };
         }
 
@@ -514,6 +619,14 @@
             const tim = inp.pileType === 'timber' ? timberRef(inp) : null;
             const fcp = inp.fc_prime;
             const dfix = isNaN(inp.dfix) ? 5 * bft : inp.dfix;
+            const bracedG = inp.topCond === 'braced';
+            const bf = isFinite(inp.braceFoot) ? inp.braceFoot : 1.0;
+            // wind on the exposed pile: exposed from the brace foot (braced) or grade (cantilever) up to the floor
+            const pw = (() => {
+                const Cf = isFinite(inp.CfPile) ? inp.CfPile : (inp.shape === 'square' ? 1.3 : 0.7);
+                const y0 = bracedG ? bf : 0, Hexp = Math.max(0, inp.h - y0), q = isFinite(inp.qzPile) ? inp.qzPile : 0;
+                return { Cf, y0, Hexp, q, G: 0.85, F: q * 0.85 * Cf * (b / 12) * Hexp / 1000 };
+            })();
 
             // σ'v at depth z below the (possibly scoured) surface
             function sig(z, submerged) {
@@ -604,7 +717,7 @@
             }
 
             // Load combinations, ASCE 7-22 §2.4.1 / 2.4.2
-            const comps = (inp.D || inp.L || inp.Lr || inp.Wv || inp.Wh) ? true : false;
+            const comps = (inp.D || inp.L || inp.Lr || inp.Wv || inp.Wh || inp.Wot) ? true : false;
             let combos = [];
             if (comps) {
                 combos = [
@@ -622,7 +735,7 @@
                         [['5', 'D + 0.6W', 1, 0, 0, 0.6], ['6', 'D + 0.75L + 0.75(0.6W) + 0.75Lr', 1, 0.75, 0.75, 0.45],
                          ['7', '0.6D + 0.6W', 0.6, 0, 0, 0.6]].forEach(c => {
                             combos.push({ id: c[0] + 'F-' + s.key, name: c[1] + ' + ' + ks + ' (' + s.name + ')',
-                                          fD: c[2], fL: c[3], fLr: c[4], fW: c[5], CD: 1.6, flood: s, kf: k });
+                                          fD: c[2], fL: c[3], fLr: c[4], fW: c[5], CD: s.debris ? (isFinite(inp.impactCD) ? inp.impactCD : 1.6) : 1.6, flood: s, kf: k });
                         });
                     });
                 }
@@ -651,21 +764,29 @@
                     const H = Math.sqrt(inp.Hx * inp.Hx + inp.Hy * inp.Hy);
                     if (H > 0) forces.push({ F: H, y: top });
                 } else {
-                    P = c.fD * inp.D + c.fL * inp.L + c.fLr * inp.Lr + c.fW * inp.Wv;
-                    if (c.fW * inp.Wh > 0) forces.push({ F: c.fW * inp.Wh, y: top });
+                    P = c.fD * inp.D + c.fL * inp.L + c.fLr * inp.Lr + c.fW * (inp.Wv + (inp.Wot || 0));
+                    // building wind share: at the brace foot when braced to grade, else at the floor (pile top)
+                    if (c.fW * inp.Wh > 0) forces.push({ F: c.fW * inp.Wh, y: bracedG ? drop + bf : top, wind: true });
+                    // wind on the exposed pile itself (ASCE 7-22 §29.4: F = qz G Cf Af), resultant at mid-height of exposed length
+                    if (c.fW * pw.F > 0) forces.push({ F: c.fW * pw.F, y: drop + pw.y0 + pw.Hexp / 2, pileWind: true });
                     if (isF) c.flood.forces.forEach(f => forces.push({ F: c.kf * f.F, y: f.y + flood.local }));
                 }
                 let br;
-                const braced = inp.topCond === 'braced';
+                const braced = bracedG;
                 if (braced) {
-                    const fl = forces.filter(f => f.y < top - 1e-6);       // flood loads on the pile shaft
-                    const Wtop = forces.filter(f => f.y >= top - 1e-6).reduce((s, f) => s + f.F, 0);
-                    const pr = propped(fl, top);
-                    const Lreq = bromsVM(pr.Vg, pr.Mg, inp.FSlat, drop);
-                    br = { H: pr.Vg, M0: pr.Mg, e: 0, Lreq, f: 0, Mmax: pr.Mmax, Rtop: pr.R, Wtop };
+                    // Above grade: pile spans brace foot/scour line to the pinned floor framing (propped cantilever) under
+                    // the shaft loads (flood + pile wind). The prop reaction and the building wind share both return to
+                    // the pile through the braces at the brace foot, so ALL lateral load ends in the soil:
+                    // Broms free-head check with every force at its height above the scour line (wind share at brace foot).
+                    const shaft = forces.filter(f => !f.wind);
+                    const pr = propped(shaft, top);
+                    const bg = broms(forces, inp.FSlat, drop);
+                    const Wtop = forces.filter(f => f.wind).reduce((s, f) => s + f.F, 0);
+                    br = { H: bg.H, M0: bg.M0, e: bg.e, Lreq: bg.Lreq, f: bg.f, Mmax: Math.max(pr.Mmax, bg.Mmax),
+                           Mabove: pr.Mmax, Mbelow: bg.Mmax, Rtop: pr.R, Wtop };
                 } else {
                     br = broms(forces, inp.FSlat, drop);
-                    br.Rtop = 0; br.Wtop = 0;
+                    br.Rtop = 0; br.Wtop = 0; br.Mabove = br.Mmax; br.Mbelow = br.Mmax;
                 }
                 const Lav = Math.max(0, Ltip - drop);
                 // pile self weight (buoyant below water)
@@ -703,7 +824,7 @@
                 const T = Pc < 0 ? -Pc : 0;
                 return {
                     id: c.id, name: c.name, CD: c.CD, dScour, P, Wp, Pc, H: br.H, M0: br.M0, e: br.e, Mmax: br.Mmax, f: br.f,
-                    Rtop: br.Rtop, Wtop: br.Wtop, Lreq: br.Lreq, tipReq: br.Lreq + drop, Lav, drop,
+                    Rtop: br.Rtop, Wtop: br.Wtop, Mabove: br.Mabove, Mbelow: br.Mbelow, Lreq: br.Lreq, tipReq: br.Lreq + drop, Lav, drop,
                     st, Qs_c, Qb, Qa_c, Qs_t, Qa_t, T,
                     rStruct: st.ratio, rEmbed: Lav > 0 ? br.Lreq / Lav : (br.Lreq > 0 ? 99 : 0),
                     rComp: Pc > 0 ? Pc / Qa_c : 0, rUplift: T > 0 ? (Qa_t > 0 ? T / Qa_t : 99) : 0
@@ -721,7 +842,7 @@
                 rows.forEach(r => { if (r[k] > best[k]) best = r; });
                 gov[k] = { ratio: best[k], id: best.id, name: best.name };
             });
-            return { sp, taper, Kp, delta, api, Nq, gp, flood, tim, dfix, rows, gov,
+            return { sp, taper, Kp, delta, api, Nq, gp, flood, tim, dfix, rows, gov, pw, bracedG, braceFoot: bf,
                      tipUsed: isNaN(inp.Ltip) ? tipDesign : inp.Ltip, tipGiven: !isNaN(inp.Ltip),
                      tipReqMax: Math.max.apply(null, rows.map(r => r.tipReq)), comps };
         }
@@ -730,7 +851,7 @@
         // Every check that is evaluated at a given tip depth. ratio ≤ 1.0 = pass.
         const EMBED_CHECKS = [
             { k: 'rEmbed', lbl: 'Lateral embedment (Broms)' },
-            { k: 'rStruct', lbl: 'Structural: combined axial + bending (NDS 3.9.2 / ASD)' },
+            { k: 'rStruct', lbl: 'Structural: combined axial + bending above & below grade (NDS 3.9.2 / ASD)' },
             { k: 'rComp', lbl: 'Axial compression capacity (skin + tip, FS)' },
             { k: 'rUplift', lbl: 'Uplift / pullout (skin + pile weight, FS)' },
             { k: 'slender', lbl: 'Column slenderness le/d ≤ 50 (NDS 3.7.1.4)' }
@@ -803,7 +924,7 @@
                 if (inp.shape === 'square') add('Round alternate, same size', `${inp.d}" round ${inp.species === 'DF' ? 'DF' : 'SP'} pile, uniform`, { shape: 'round', dTip: NaN });
                 else add('Square alternate, same size', `${inp.d}x${inp.d} sawn ${inp.sawnGrade}`, { shape: 'square', dTip: NaN });
             }
-            if (inp.topCond !== 'braced') add('Brace pile top at floor framing', 'top condition = braced/pinned', { topCond: 'braced' });
+            if (inp.topCond !== 'braced') add('Brace piles to grade', 'braced to grade = yes (knee/X bracing)', { topCond: 'braced' });
             // Soil: the strength needed to meet the target (confirm with a boring before relying on it)
             const target = isNaN(inp.maxLen) || inp.maxLen <= 0 ? Infinity : inp.maxLen;
             if (st0.cls === 'ok') {
@@ -837,7 +958,7 @@
             const modeTxt = inp.embedMode === 'manual' ? 'Manual tip depth (checked as entered)' : `Auto-solved: scan ${f2(Math.max(0.5, inp.minEmbed), 1)}–${f2(inp.maxEmbed, 0)} ft in ${f2(sol.step || inp.embStep, 1)} ft steps; first depth where every check passes`;
             const ctl = sol.controls[0] === 'minEmbed' ? 'Minimum embedment (' + f2(inp.minEmbed, 1) + ' ft) — no check controls'
                         : sol.controls.map(checkLabel).join(' + ');
-            const pileTxt = `${inp.d}${inp.shape === 'square' ? 'x' + inp.d + '" square' : '" round'}${pack.sol.res.taper ? ' (butt; tip ' + inp.dTip + '")' : ''}, ${inp.topCond === 'braced' ? 'braced top' : 'free top'}, ${inp.soilType === 'clay' ? 'clay su ' + inp.suTop + ' + ' + inp.suGrad + ' psf/ft' : 'sand φ ' + inp.phi + '°'}`;
+            const pileTxt = `${inp.d}${inp.shape === 'square' ? 'x' + inp.d + '" square' : '" round'}${pack.sol.res.taper ? ' (butt; tip ' + inp.dTip + '")' : ''}, ${inp.topCond === 'braced' ? 'braced to grade (brace foot ' + f2(pack.sol.res.braceFoot, 1) + ' ft)' : 'NOT braced — free cantilever'}, ${inp.soilType === 'clay' ? 'clay su ' + inp.suTop + ' + ' + inp.suGrad + ' psf/ft' : 'sand φ ' + inp.phi + '°'}`;
             let h = `<h2>Embedment Solution${opts.title ? ' — ' + opts.title : ''}</h2>
                 <p><span class="badge ${st.cls}">${st.text}</span></p>
                 <table><tr><th>Item</th><th>Value</th></tr>
@@ -854,7 +975,10 @@
                 const g = sol.checks[c.k];
                 h += `<tr><td style="text-align:left">${c.lbl}</td><td class="${cls(g.ratio)}">${f2(g.ratio)}</td><td style="text-align:left">${g.id}${g.name ? ': ' + g.name : ''}</td><td>${g.ratio > 1 ? '❌ FAIL' : '✅ PASS'}</td></tr>`;
             });
-            h += '</table><p style="font-size:0.85em">No pile-head deflection check exists in this tool yet (none is run). Lateral embedment uses Broms ultimate capacity with FS; serviceability deflection should be checked separately.</p>';
+            h += '</table>';
+            if (!sol.ok && inp.topCond !== 'braced' && sol.checks.rStruct.ratio > 1)
+                h += `<p class="fail" style="padding:6px;font-weight:bold">❌ UNBRACED PILE FAILS IN BENDING (ratio ${f2(sol.checks.rStruct.ratio)}, ${sol.checks.rStruct.id}). The free cantilever from the floor to the point of fixity cannot carry the wind share + flood loads at any embedment — brace the piles to grade or increase the pile size.</p>`;
+            h += '<p style="font-size:0.85em">No pile-head deflection check exists in this tool yet (none is run). Lateral embedment uses Broms ultimate capacity with FS; serviceability deflection should be checked separately.</p>';
             if (pack.alts && pack.alts.length) {
                 h += `<h3>${st.over || !sol.ok ? 'Options to get under the ' + inp.maxLen + ' ft target (solver re-run for each)' : 'Alternatives (solver re-run for each)'}</h3>
                     <table><tr><th>Option</th><th>Change</th><th>Embedment (ft)</th><th>Total (ft)</th><th>Controls</th><th>Status</th></tr>`;
@@ -892,10 +1016,10 @@
         function f2(x, n) { return (x === undefined || isNaN(x)) ? '–' : x.toFixed(n === undefined ? 2 : n); }
 
         function comboTable(res) {
-            let t = `<table class="combo"><tr><th>Combo</th><th>P (k)</th><th>Pile wt (k)</th><th>V grade (k)</th><th>M grade (k-ft)</th><th>Mmax (k-ft)</th><th>CD</th>
+            let t = `<table class="combo"><tr><th>Combo</th><th>P (k)</th><th>Pile wt (k)</th><th>V grade (k)</th><th>M grade (k-ft)</th><th>M above / below grade (k-ft)</th><th>CD</th>
                      <th>Fc' / Fb' (psi)</th><th>Struct.</th><th>L req / avail (ft)</th><th>Embed.</th><th>Comp. (k) dem/allow</th><th>Comp.</th><th>Uplift (k) dem/allow</th><th>Uplift</th></tr>`;
             res.rows.forEach(r => {
-                t += `<tr><td style="text-align:left">${r.id}: ${r.name}</td><td>${f2(r.P)}</td><td>${f2(r.Wp)}</td><td>${f2(r.H)}</td><td>${f2(r.M0, 1)}</td><td>${f2(r.Mmax, 1)}</td><td>${r.CD}</td>
+                t += `<tr><td style="text-align:left">${r.id}: ${r.name}</td><td>${f2(r.P)}</td><td>${f2(r.Wp)}</td><td>${f2(r.H)}</td><td>${f2(r.M0, 1)}</td><td>${f2(r.Mabove, 1)} / ${f2(r.Mbelow, 1)}</td><td>${r.CD}</td>
                       <td>${f2(r.st.FcP, 0)} / ${f2(r.st.FbP, 0)}</td><td class="${cls(r.rStruct)}">${f2(r.rStruct)}</td>
                       <td>${f2(r.Lreq, 1)} / ${f2(r.Lav, 1)}</td><td class="${cls(r.rEmbed)}">${f2(r.rEmbed)}</td>
                       <td>${f2(Math.max(r.Pc, 0))} / ${f2(r.Qa_c)}</td><td class="${cls(r.rComp)}">${f2(r.rComp)}</td>
@@ -921,7 +1045,7 @@
                 <tr><td>Flood velocity V</td><td>${f2(fl.V, 1)} ft/s</td></tr>
                 <tr><td>Breaking wave FD = 0.5 γw CD D Hb² (CD ${fl.CDb}, D ${f2(fl.Dw)} ft) @ Esw</td><td>${f2(fl.Fbrk)} kips</td></tr>
                 <tr><td>Hydrodynamic F = 0.5 a ρ V² A (a ${fl.a}) @ ds/2</td><td>${f2(fl.Fdyn)} kips</td></tr>
-                <tr><td>Debris impact (W V CI CO CD CB Rmax / 2gΔt, CD ${f2(fl.CDd)}) @ Esw</td><td>${f2(fl.Fdeb)} kips</td></tr>
+                <tr><td>Debris impact, FEMA P-55 Eq. 8.9: Fi = W V CD CB CStr (CD ${f2(fl.CDd)}${fl.CDd === 1 ? ' V zone' : ''}, CB ${f2(fl.CB)}, CStr ${f2(fl.CStr)} ≡ π CI CO Rmax/(2gΔt) with CI ${fl.CI}, CO ${fl.CO}, Δt ${fl.dt} s, Rmax ${f2(fl.Rmax, 3)}) @ Esw — ${fl.debris ? 'this pile takes debris impact; debris combos use the entered CD (default 1.6)' : 'not applied (this pile not selected as the debris-struck pile)'}</td><td>${f2(fl.debris ? fl.Fdeb : 0)} kips</td></tr>
                 <tr><td>Local scour + general erosion (applied to flood combos)</td><td>${f2(fl.local)} + ${f2(fl.S - fl.local)} = ${f2(fl.S)} ft</td></tr>
                 <tr><td>Fa factor (ASCE 7-22 §2.4.2)</td><td>${fl.kf}</td></tr></table>`;
         }
@@ -933,8 +1057,10 @@
                 Soil: ${inp.soilType === 'clay' ? 'CLAY su ' + inp.suTop + ' psf + ' + inp.suGrad + ' psf/ft (cap ' + inp.suMax + '), α method, 9su end bearing, Broms clay; ' : ''}Kp ${f2(res.Kp)}, δ ${res.delta}°, Nq ${res.Nq}, f<sub>s,lim</sub> ${res.api.fslim} ksf, q<sub>lim</sub> ${res.api.qlim} ksf. Pile tip ${f2(res.tipUsed, 1)} ft below grade (${res.tipSource || (res.tipGiven ? 'input' : 'required, design mode')}); max required tip ${f2(res.tipReqMax, 1)} ft.</p>`;
             if (inp.topCond === 'braced') {
                 const mx = res.rows.reduce((a, r) => Math.max(a, (r.Rtop || 0) + (r.Wtop || 0)), 0);
-                h += `<p><strong>Top braced at floor framing:</strong> pile modeled as propped cantilever (pinned top, fixed ${f2(res.dfix, 1)} ft below scour line), le = ${inp.KeBr} × (scour line to framing). Lateral wind at the top and the flood prop reaction go to the floor diaphragm — max per-pile top reaction ${f2(mx)} k must be resisted by the building's lateral system (shear walls / knee braces / cross bracing). Embedment checked for V and M at the scour line (Broms equilibrium, FS ${inp.FSlat}).</p>`;
+                h += `<p><strong>Braced to grade:</strong> pile top pinned at the floor framing; braces land ${f2(res.braceFoot, 1)} ft above grade. Above grade the pile is a propped cantilever (fixed ${f2(res.dfix, 1)} ft below scour line) under flood + pile wind; le = ${inp.KeBr} × (scour line to framing). The building wind share (${f2(inp.Wh)} k strength) and the prop reaction (max ${f2(mx)} k incl. wind) return through the braces to the brace foot, so the soil check (Broms, FS ${inp.FSlat}) and the below-grade bending use ALL lateral loads, with the wind share applied at the brace foot. Bending ratio uses max(above-grade propped moment, below-grade Broms moment).</p>`;
             }
+            else h += `<p><strong>Not braced to grade:</strong> free cantilever from the floor (wind share ${f2(inp.Wh)} k strength at the pile top) to the point of fixity, plus pile wind and flood; le = Ke ${inp.Ke} × (top + fixity).</p>`;
+            if (res.pw && res.pw.F > 0) h += `<p>Wind on exposed pile (ASCE 7-22 §29.4): F = qz G Cf b Hexp = ${f2(res.pw.q, 1)} × 0.85 × ${res.pw.Cf} × ${f2(inp.d / 12)} ft × ${f2(res.pw.Hexp, 1)} ft = ${f2(res.pw.F)} k (strength), at mid-height of the exposed length.</p>`;
             if (!res.comps) h += '<p><em>No load components entered — showing the original user case only. Enter D, L, Lr, W in the Advanced section to run all ASCE 7 combinations.</em></p>';
             h += govTable(res) + '<h3>Flood Loads</h3>' + floodTable(res.flood) + '<h3>All Combinations</h3>' + comboTable(res);
             return h;
@@ -944,7 +1070,10 @@
             const inRows = [
                 ['Pile', `${inp.pileType} ${inp.shape} ${inp.d}" ${res.tim ? '— ' + res.tim.name : "f'c " + inp.fc_prime + ' psi'}`],
                 ['Height of pile top above grade h', inp.h + ' ft'],
-                ['Loads D / L / Lr / Wv / Wh (nominal)', [inp.D, inp.L, inp.Lr, inp.Wv, inp.Wh].join(' / ') + ' kips'],
+                ['Loads D / L / Lr / Wv / Wh / Wot (nominal; W strength)', [inp.D, inp.L, inp.Lr, inp.Wv, inp.Wh, inp.Wot || 0].join(' / ') + ' kips'],
+                ['Wind on exposed pile', res.pw && res.pw.q > 0 ? `qz ${f2(res.pw.q, 1)} psf (incl. Kd), G 0.85, Cf ${res.pw.Cf}, exposed ${f2(res.pw.Hexp, 1)} ft from ${res.bracedG ? 'brace foot' : 'grade'} → ${f2(res.pw.F)} k strength` : 'not entered'],
+                ['Building wind helper', inp.bw ? bwSummary(inp.bw) : 'not used (Wh / Wot entered manually)'],
+                ['Debris impact', inp.debrisOn ? `This pile takes debris: W ${inp.debrisW} lb, CB ${isFinite(inp.CB) ? inp.CB : 1}, CStr ${res.flood ? f2(res.flood.CStr) : '–'} (FEMA P-55 Eq. 8.9); NDS CD ${isFinite(inp.impactCD) ? inp.impactCD : 1.6} in the debris combos` : 'Not applied to this pile (debris goes on one critical pile)'],
                 ['User P / Hx / Hy (single case)', [inp.P, inp.Hx, inp.Hy].join(' / ') + ' kips'],
                 ['Soil type', inp.soilType === 'clay' ? `Clay: su ${inp.suTop} psf + ${inp.suGrad} psf/ft, cap ${inp.suMax} psf (α method, 9su, Broms clay)` : 'Sand (β method, Nq, Broms sand)'],
                 ["Soil γ' / γm / φ / δ / dw", `${inp.gammaEff} pcf / ${inp.gammaM} pcf / ${inp.phi}° / ${res.delta}° / ${inp.dw} ft`],
@@ -953,7 +1082,7 @@
                 ['Pile tip below grade', `${f2(res.tipUsed, 1)} ft (${res.tipSource || (res.tipGiven ? 'input' : 'design')})`],
                 ['Round pile taper', res.taper ? `butt ${inp.d}" → tip ${inp.dTip}" (bending/lateral at scour-line diameter, skin by local perimeter, end bearing on tip area)` : 'uniform'],
                 ['Embedment mode / length target', `${inp.embedMode === 'manual' ? 'Manual' : 'Auto-solve'} (min ${inp.minEmbed} / max ${inp.maxEmbed} ft, step ${inp.embStep} ft) / ${inp.maxLen} ft ${inp.lenMode === 'hard' ? 'hard limit' : 'advisory'}`],
-                ['Pile top condition', inp.topCond === 'braced' ? `Braced/pinned at framing (Ke ${inp.KeBr}, le = scour line to framing); propped cantilever fixed ${f2(res.dfix, 1)} ft below scour line; wind to diaphragm` : 'Free top (cantilever)'],
+                ['Braced to grade', inp.topCond === 'braced' ? `YES — brace foot ${f2(res.braceFoot, 1)} ft above grade; wind share enters at brace foot and goes to soil; top pinned at framing (Ke ${inp.KeBr}); propped cantilever above grade, fixity ${f2(res.dfix, 1)} ft below scour line` : 'NO — free cantilever from floor to fixity (Ke ' + inp.Ke + ')'],
                 ['Column stability Ke / fixity / Ct', `${inp.Ke} / ${f2(res.dfix, 1)} ft / ${inp.Ct}`],
                 ['Flood zone / BFE / grade', `${inp.zone} / ${f2(inp.BFE, 2)} / ${f2(inp.G, 2)} ft`]
             ].map(r => `<tr><td style="text-align:left">${r[0]}</td><td style="text-align:left">${r[1]}</td></tr>`).join('');
@@ -966,7 +1095,7 @@
                 <h2>Load Combinations</h2>${comboTable(res)}
                 <h2>References</h2><ul style="font-size:9pt">
                 <li>ASCE 7-22 §2.4.1 ASD load combinations; §2.4.2 flood loads (1.5Fa V/Coastal A, 0.75Fa A zones); Ch. 5 flood loads (§5.4.4 breaking wave on piles, §5.4.3 hydrodynamic, §5.4.5 impact).</li>
-                <li>FEMA P-55 Coastal Construction Manual, Ch. 8: Hb = 0.78ds, local scour ≈ 2D, debris impact Eq. 8.11.</li>
+                <li>FEMA P-55 Coastal Construction Manual, Ch. 8: Hb = 0.78ds, local scour ≈ 2D (Eq. 8.10/8.11 scour), debris impact Eq. 8.9 Fi = W V CD CB CStr (Table 8-3 CD, Table 8-4 CB, CStr 0.2 timber pile).</li><li>ASCE 7-22 Ch. 26–27 directional procedure (Kz Table 26.11-1, Cp Fig. 27.3-1, §27.3.1.1.2 elements below the floor), §29.4 wind on open structures/members (Cf). NDS Table 2.3.2: CD = 2.0 impact (not permitted for members treated with waterborne preservatives to marine retentions — verify treatment).</li>
                 <li>AWC NDS 2018: §3.7 column stability Cp, §3.9.2 combined bending + compression, Table 4D sawn timbers, Table 6A round piles, CD per Table 2.3.2.</li>
                 <li>Broms (1964) lateral resistance of piles in cohesionless soil (short free-head pile; max moment depth 0.82√(H/γ'DKp)).</li>
                 <li>API RP 2A-WSD §6.4.2 α method for clay (α = 0.5ψ^-0.5 / 0.5ψ^-0.25), end bearing 9su; Broms (1964) lateral resistance in cohesive soil (9suD, top 1.5D neglected).</li>
