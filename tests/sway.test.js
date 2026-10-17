@@ -108,6 +108,11 @@ t('recommended 14x14 scheme (rigid-diaphragm wind 5.10 k, notched, service drift
     assert.ok(sb.ok && ss.ok); assert.ok(Math.abs(sb.tip + 11.3 - tb) < 0.01 && Math.abs(ss.tip + 11.3 - ts) < 0.01, sb.tip + '/' + ss.tip);
   });
 });
+t('calc sheet reports the spring fixity (≈0.33) for the notched connection, not the topFix input', () => {
+  const i = Object.assign({}, base, per, { topCond: 'sway', connType: 'notched', d: 14, topFix: 0.5, Wh: 3.6, WhY: 1.39, Wot: 4.7, driftBasis: 'service', debrisShareN: 18 });
+  const html = lib.renderEmbedPanel(i, lib.runEmbedment(i));
+  assert.ok(/top fixity α 0\.3[0-9]/.test(html), 'alpha text'); assert.ok(!/top fixity α 0\.50/.test(html));
+});
 t('calculator default top condition is the sway frame (bracing is opt-in)', () => {
   assert.ok(/<option value="sway" selected>/.test(require('fs').readFileSync(require('path').join(__dirname, '..', 'index.html'), 'utf8')));
 });
