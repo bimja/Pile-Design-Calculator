@@ -61,6 +61,33 @@ t('no-brace primary design: 16x16 with full-fixity moment connection passes ever
     assert.ok(S(Object.assign({ topCond: 'sway', topFix: 1, connMcap: 999, d: 16 }, m, p)).ok, JSON.stringify(m))));
   assert.ok(!S(Object.assign({ topCond: 'sway', topFix: 1, connMcap: 999, d: 14, debrisOn: true }, per2)).ok);
 });
+const N = m => S(Object.assign({ topCond: 'sway', connType: 'notched' }, m));
+t('notched + doubled 12x12: M cap ≈ 8.0 k-ft (2 × [3.03 bearing + 0.97 bolts]), k ≈ 600 k-ft/rad, α ≈ 0.35–0.38, 25% notch removal', () => {
+  const r = lib.pileDesign(Object.assign({}, base, per, { topCond: 'sway', connType: 'notched', d: 12, Ltip: 20 }));
+  assert.ok(Math.abs(r.conn.Mcap - 7.99) < 0.05, r.conn.Mcap); assert.ok(Math.abs(r.conn.kRot - 602) < 5);
+  assert.ok(Math.abs(r.conn.removal - 0.25) < 1e-9);
+  const row = r.rows.find(x => x.id === '5F-brk'); assert.ok(Math.abs(row.aL - 0.38) < 0.01); assert.ok(row.Mcapped && Math.abs(row.Mtop - r.conn.Mcap) < 1e-6);
+});
+t('notched seat-only (no top shoulder) falls back to the bolt couple', () => {
+  const r = lib.pileDesign(Object.assign({}, base, { topCond: 'sway', connType: 'notched', notchShoulder: 'seat', d: 12, Ltip: 20 }));
+  assert.ok(Math.abs(r.conn.Mcap - 2 * 0.965) < 0.01);
+});
+t('notch deeper than 50% of the section fails the connection check (FEMA P-55)', () => {
+  const s = N({ d: 12, notchGeom: '11.25/3/3.5/2', driftN: 1 });
+  assert.ok(s.checks.rConn.ratio > 1);
+});
+t('notched 12x12 perimeter fails Fish Face: bending ≈1.40 and drift ≈3.6 (base + soft)', () => {
+  [{}, soft].forEach(p => { const s = N(Object.assign({ d: 12 }, per, p)); assert.ok(!s.ok); assert.ok(s.checks.rStruct.ratio > 1.3 && s.checks.rDrift.ratio > 3); });
+});
+t('notched: 20x20 is the smallest size passing non-debris piles; 14x14 passes strength if drift is not a criterion', () => {
+  assert.ok(!N({ d: 18 }).ok); assert.ok(N({ d: 20 }).ok); assert.ok(N(Object.assign({ d: 20 }, per)).ok);
+  assert.ok(N(Object.assign({ d: 14, driftN: 1 }, per)).ok); assert.ok(!N(Object.assign({ d: 14, driftN: 1, debrisOn: true }, per)).ok);
+});
+t('12x12 perimeter passes only with a full moment connection AND drift relaxed to h/75 (no debris on that pile)', () => {
+  const fm = { topCond: 'sway', topFix: 1, connMcap: 999, d: 12 };
+  assert.ok(!S(Object.assign({}, fm, per)).ok); assert.ok(S(Object.assign({ driftN: 75 }, fm, per)).ok);
+  assert.ok(!S(Object.assign({ driftN: 75, debrisOn: true }, fm, per)).ok);
+});
 t('calculator default top condition is the sway frame (bracing is opt-in)', () => {
   assert.ok(/<option value="sway" selected>/.test(require('fs').readFileSync(require('path').join(__dirname, '..', 'index.html'), 'utf8')));
 });
