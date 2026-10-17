@@ -209,9 +209,31 @@
                 <div><label>Effective length factor Ke (2.1 free-top cantilever)</label><input type="number" id="Ke" value="2.1" step="0.1"></div>
                 <div><label>Braced to grade (knee / X bracing from floor framing to pile near grade)</label>
                     <select id="topCond">
-                        <option value="free" selected>No — free cantilever from floor to point of fixity (wind share + flood)</option>
+                        <option value="free">No — free cantilever from floor to point of fixity (wind share + flood)</option>
                         <option value="braced">Yes — top pinned at floor framing; wind share enters at the brace foot</option>
+                        <option value="sway" selected>No X/knee bracing — top fixed by floor framing (sway frame: dropped beams + bolts)</option>
                     </select></div>
+                <div><label>Sway frame: top rotational fixity α (1.0 full, 0 pinned; 0.5 default for bolted dropped beam)</label><input type="number" id="topFix" value="0.5" step="0.1" min="0" max="1">
+                    <div style="font-size:0.8em;color:#555">α = share of the fully fixed-head top moment the connection is assumed to provide. 0.5 reflects a semi-rigid bolted timber joint (bolt slip in oversize holes, wood crushing). The moment must also be developed by the connection (checked below); if it can't, fixity can't be counted.</div></div>
+                <div><label>Sway frame: Ke at full top fixity (NDS App. G: 1.2 rotation fixed / translation free)</label><input type="number" id="KeFix" value="1.2" step="0.1"></div>
+                <div><label>Top connection: bolt Z′ per bolt (kips; NDS 12.3, wet, CD 1.6)</label><input type="number" id="connZ" value="1.93" step="0.05"></div>
+                <div><label>Top connection: bolts per beam end / spacing (in) / beam ends restraining the pile</label><input type="text" id="connGeom" value="2/6/1"></div>
+                <div><label>Top connection type</label><select id="connType">
+                        <option value="bolted" selected>Dropped beam, through-bolted only (moment = bolt group; fixity = α above)</option>
+                        <option value="notched">Notched + doubled beam (pile dadoed to beam depth each face, ply bearing + bolts; α from rotational stiffness)</option>
+                    </select>
+                    <div style="font-size:0.8em;color:#555">Notched + doubled: M cap = faces × [Fc⊥′·t·(b/3)·(2b/3) bearing couple + bolt couple]; k = 0.5 × faces × (bolt slip γ = 180,000 D<sup>1.5</sup> Σr² + Fc⊥ bearing springs); α = kL/(EI + kL); top moment capped at M cap (joint yields in bearing). Only restrains rotation in the plane of the notched beams — the beams must run in the analysis (flood/wind) direction. Net section at the notch checked; FEMA P-55 limits notching to 50% of the pile section.</div></div>
+                <div><label>Notched: beam depth (in) / ply thickness per face (in) / notch depth per face (in) / faces</label><input type="text" id="notchGeom" value="11.25/3/1.5/2"></div>
+                <div><label>Notched: pocket form</label><select id="notchShoulder"><option value="dado" selected>Dado with top shoulder (pile continues above beam)</option><option value="seat">Seat only (pile cut at top of beam — bolts only for moment)</option></select></div>
+                <div><label>Notched: beam Fc⊥′ (psi; SP 565 × CM 0.67 wet = 379)</label><input type="number" id="FcPerp" value="379" step="10"></div>
+                <div><label>Top connection moment capacity override (k-ft; blank = bolt group; enter for a designed moment connection)</label><input type="number" id="connMcap" value="" step="0.5"></div>
+                <div><label>Orthogonal direction Y: wind share per pile (kips, strength; same top condition; 0 = uniaxial). Runs Y alone and ASCE 7 Case 3 (0.75X + 0.75Y) biaxial</label><input type="number" id="WhY" value="0" step="0.1"></div>
+                <div><label>Debris impact shared by floor diaphragm: number of piles tied by the floor (0 = struck pile sways alone)</label><input type="number" id="debrisShareN" value="0" step="1">
+                    <div style="font-size:0.8em;color:#555">Sway frame only. With a floor diaphragm tying N pile tops, the struck pile spans fixity → floor as a propped cantilever for the impact; the prop reaction is spread over N piles. Requires the floor framing/diaphragm and beam-to-pile shear connection to deliver the prop reaction (checked separately).</div></div>
+                <div><label>Drift check basis</label><select id="driftBasis"><option value="strength" selected>All ASD combos incl. flood (strength-level, conservative)</option><option value="service">Serviceability wind only (no flood): svc factor × strength wind</option></select>
+                    <div style="font-size:0.8em;color:#555">Drift is a serviceability limit with no code value for pile foundations. Service basis: IBC Table 1604.3 note f allows 0.42 × the Vult-level wind for deflection (≈ 0.7 × ASD wind); ASCE 7-22 App. CC suggests a 10-yr MRI wind (≈ 0.3–0.45 × strength on the Texas coast). Strength-level stability (P-delta) stays in the NDS 3.9.2 check.</div></div>
+                <div><label>Serviceability wind factor × strength wind (0.42 = IBC 1604.3 note f)</label><input type="number" id="svcF" value="0.42" step="0.02"></div>
+                <div><label>Drift limit: floor sway ≤ (height above scour line) / N, N =</label><input type="number" id="driftN" value="100" step="10"></div>
                 <div><label>Brace foot height above grade (ft)</label><input type="number" id="braceFoot" value="1" step="0.5"></div>
                 <div><label>Ke for braced top (NDS App. G: 1.0 pinned, 0.8 fixed-base)</label><input type="number" id="KeBr" value="1.0" step="0.1"></div>
                 <div><label>Temperature factor Ct</label><input type="number" id="Ct" value="1.0" step="0.05"></div>
@@ -436,7 +458,8 @@
                 Ltip: numVal('Ltip', NaN), dw: numVal('dw', 0), gammaM: numVal('gammaM', 110), delta: numVal('delta', NaN),
                 Kc: numVal('Kc', 1.0), Kt: numVal('Kt', 0.8), FSc: numVal('FSc', 2.5), FSt: numVal('FSt', 3.0), FSlat: numVal('FSlat', 2.0),
                 NqOv: numVal('NqOv', NaN), soilType: strVal('soilType', 'sand') === 'clay' ? 'clay' : 'sand', suTop: numVal('suTop', 500), suGrad: numVal('suGrad', 0), suMax: numVal('suMax', 2000),
-                dfix: numVal('dfix', NaN), Ke: numVal('Ke', 2.1), topCond: strVal('topCond', 'free') === 'braced' ? 'braced' : 'free', KeBr: numVal('KeBr', 1.0), Ct: numVal('Ct', 1.0),
+                dfix: numVal('dfix', NaN), Ke: numVal('Ke', 2.1), topCond: ['braced', 'sway', 'free'].indexOf(strVal('topCond', 'sway')) >= 0 ? strVal('topCond', 'sway') : 'sway',
+                topFix: numVal('topFix', 0.5), KeFix: numVal('KeFix', 1.2), connZ: numVal('connZ', 1.93), connGeom: strVal('connGeom', '2/6/1'), connMcap: numVal('connMcap', NaN), connType: strVal('connType', 'bolted'), notchGeom: strVal('notchGeom', '11.25/3/1.5/2'), notchShoulder: strVal('notchShoulder', 'dado'), FcPerp: numVal('FcPerp', 379), debrisShareN: numVal('debrisShareN', 0), driftN: numVal('driftN', 100), driftBasis: strVal('driftBasis', 'strength'), svcF: numVal('svcF', 0.42), WhY: numVal('WhY', 0), KeBr: numVal('KeBr', 1.0), Ct: numVal('Ct', 1.0),
                 zone: ['AE', 'CA', 'VE'].indexOf(strVal('zone', 'none')) >= 0 ? strVal('zone', 'none') : 'none',
                 BFE: numVal('BFE', NaN), G: numVal('Gelev', NaN), Esw: numVal('Esw', NaN), V: numVal('Vel', NaN),
                 erosion: numVal('erosion', 0), localScour: numVal('localScour', NaN), dragA: numVal('dragA', NaN),
@@ -537,14 +560,15 @@
                     DF_1:  ['Douglas Fir-Larch No.1 P&T', 1200, 1000, 580000],
                     DF_2:  ['Douglas Fir-Larch No.2 P&T', 750, 700, 470000]
                 }[inp.sawnGrade] || ['Southern Pine No.1', 1350, 825, 550000];
-                return { name: T[0] + ' sawn timber (NDS Supp. Table 4D)', Fb: T[1], Fc: T[2], Emin: T[3],
+                const Etab = { SP_SS: 1500000, SP_1: 1500000, SP_2: 1200000, DF_1: 1600000, DF_2: 1300000 };
+                return { name: T[0] + ' sawn timber (NDS Supp. Table 4D)', Fb: T[1], Fc: T[2], Emin: T[3], E: Etab[inp.sawnGrade] || 1500000,
                          CM_Fb: 1.0, CM_Fc: 0.91, CM_E: 1.0,             // wet service, Table 4D
                          CF_Fb: d > 12 ? Math.pow(12 / d, 1 / 9) : 1.0,  // size factor, Table 4D
                          c: 0.8 };
             }
             const sp = inp.species === 'DF';
             return { name: (sp ? 'Douglas Fir' : 'Southern Pine') + ' round timber pile (NDS Table 6A)',
-                     Fb: sp ? 2450 : 2400, Fc: sp ? 1250 : 1200, Emin: 790000,
+                     Fb: sp ? 2450 : 2400, Fc: sp ? 1250 : 1200, Emin: 790000, E: 1500000,
                      CM_Fb: 1.0, CM_Fc: 1.0, CM_E: 1.0,                  // pile values already wet service
                      CF_Fb: d > 13.5 ? Math.pow(13.5 / d, 1 / 9) : 1.0,  // NDS 6.3.7
                      c: 0.85 };
@@ -592,7 +616,7 @@
             const scen = [];
             if (coastal) scen.push({ key: 'brk', name: 'breaking wave', forces: [{ F: Fbrk, y: ds }] });
             scen.push({ key: 'dyn', name: inp.debrisOn ? 'hydrodynamic + debris' : 'hydrodynamic', debris: !!inp.debrisOn,
-                        forces: [{ F: Fdyn, y: ds / 2 }].concat(inp.debrisOn ? [{ F: Fdeb, y: ds }] : []) });
+                        forces: [{ F: Fdyn, y: ds / 2 }].concat(inp.debrisOn ? [{ F: Fdeb, y: ds, debris: true }] : []) });
             return { coastal, G, BFE, Ge, Esw, ds, Hb, V, local, S, CDb, Dw, Fbrk, a, Fdyn, CDd, Fdeb, CB, CStr, CI, CO, Rmax, dt, debris: !!inp.debrisOn, scen,
                      kf: coastal ? 1.5 : 0.75, gw };
         }
@@ -620,6 +644,46 @@
             const fcp = inp.fc_prime;
             const dfix = isNaN(inp.dfix) ? 5 * bft : inp.dfix;
             const bracedG = inp.topCond === 'braced';
+            const sway = inp.topCond === 'sway';
+            const alpha = sway ? Math.min(1, Math.max(0, isFinite(inp.topFix) ? inp.topFix : 0.5)) : 0;
+            const KeFix = isFinite(inp.KeFix) ? inp.KeFix : 1.2;
+            const Esw = tim ? tim.E * inp.Ct : 57000 * Math.sqrt(inp.fc_prime || 5000);
+            const driftN = isFinite(inp.driftN) && inp.driftN > 0 ? inp.driftN : 100;
+            // Top connection moment capacity: bolts in one vertical line per beam end, M = Z' Σr²/r_max per end × ends
+            const conn = (() => {
+                const g = String(inp.connGeom || '2/6/1').split('/').map(parseFloat);
+                const n = g[0] > 0 ? g[0] : 2, sIn = g[1] > 0 ? g[1] : 6, ends = g[2] > 0 ? g[2] : 1, Z = isFinite(inp.connZ) ? inp.connZ : 1.93;
+                let sr2 = 0, rmax = 0; for (let i = 0; i < n; i++) { const r = Math.abs(i - (n - 1) / 2) * sIn / 12; sr2 += r * r; rmax = Math.max(rmax, r); }
+                const Mbolt = rmax > 0 ? Z * sr2 / rmax * ends : 0;
+                const override = isFinite(inp.connMcap) && inp.connMcap > 0;
+                const type = inp.connType === 'notched' ? 'notched' : 'bolted';
+                const out = { type, n, sIn, ends, Z, Mbolt, Mcap: override ? inp.connMcap : Mbolt, override, Vcap: n * Z * ends, kRot: 0 };
+                if (type === 'notched' && tim) {
+                    // Notched + doubled: pile dadoed at each face to the beam depth (seat + top shoulder), doubled ply bolted through.
+                    // Moment = bearing couple on each ply (seat bears up at one side, shoulder bears down at the other), lever b - a,
+                    // contact length a = b/3 (triangular-ish bearing) + bolt-group couple; summed over the faces (plies).
+                    const gN = String(inp.notchGeom || '11.25/3/1.5/2').split('/').map(parseFloat);
+                    const db = gN[0] > 0 ? gN[0] : 11.25, t = gN[1] > 0 ? gN[1] : 3, dn = gN[2] >= 0 ? gN[2] : 1.5, faces = gN[3] > 0 ? gN[3] : 2;
+                    const bIn = b, Fperp = isFinite(inp.FcPerp) ? inp.FcPerp : 379;    // SP Fc⊥ 565 psi × CM 0.67 (wet)
+                    const a = bIn / 3, lever = (bIn - a) / 12;                         // ft
+                    const Cb = Fperp * t * a / 1000;                                   // kips per ply-face contact zone
+                    const Mbear = Cb * lever, Mb1 = rmax > 0 ? Z * sr2 / rmax : 0;
+                    const shoulder = inp.notchShoulder !== 'seat';                     // seat only => no bearing couple
+                    const Mcap = faces * ((shoulder ? Mbear : 0) + Mb1);
+                    // Rotational stiffness: bolts (NDS 12.6 load/slip γ = 180000 D^1.5 lb/in per shear plane, 3/4" bolts, 1 plane
+                    // per ply) + perpendicular-grain bearing springs (E⊥ ≈ E/20 over an effective depth db/2); × 0.5 for shrinkage
+                    // gaps / oversize holes / seating.
+                    const gam = 180 * Math.pow(0.75, 1.5);                              // k/in
+                    const kB = gam * sr2 * 144;                                         // k-in/rad per ply
+                    const Kp = (tim.E / 20 / 1000) / (db / 2);                          // ksi/in
+                    const kBr = shoulder ? 2 * Kp * t * a * Math.pow((bIn - a) / 2, 2) : 0;
+                    const kRot = 0.5 * faces * (kB + kBr) / 12;                         // k-ft/rad
+                    const removal = 2 * dn / bIn;
+                    Object.assign(out, { Mcap: override ? inp.connMcap : Mcap, Mbear, Mb1, faces, db, t, dn, a, Cb, kRot, removal, shoulder,
+                        bNet: bIn - 2 * dn, Fperp, Vcap: faces * (shoulder || true ? Cb * 3 : 0) + n * Z * faces });
+                }
+                return out;
+            })();
             const bf = isFinite(inp.braceFoot) ? inp.braceFoot : 1.0;
             // wind on the exposed pile: exposed from the brace foot (braced) or grade (cantilever) up to the floor
             const pw = (() => {
@@ -758,6 +822,10 @@
                     geo = { perAt: z => Math.PI * dAt(top + z) / 12, Atip: Math.PI * inp.dTip * inp.dTip / 4 / 144 };
                     bft = dScour / 12;
                 } else geo = { perAt: () => perft, Atip: Aft };
+                // effective fixity: notched connection => spring α = kL/(EI + kL); otherwise the input α
+                const EIc = Esw * spC.I / 1000 / 144;
+                const aL = (sway && conn.type === 'notched') ? conn.kRot * (top + dfix) / (EIc + conn.kRot * (top + dfix)) : alpha;
+                const capM = (sway && conn.type === 'notched') ? conn.Mcap : Infinity;   // ductile bearing joint: top moment limited to Mcap
                 let P, forces = [];
                 if (c.user) {
                     P = inp.P;
@@ -769,7 +837,15 @@
                     if (c.fW * inp.Wh > 0) forces.push({ F: c.fW * inp.Wh, y: bracedG ? drop + bf : top, wind: true });
                     // wind on the exposed pile itself (ASCE 7-22 §29.4: F = qz G Cf Af), resultant at mid-height of exposed length
                     if (c.fW * pw.F > 0) forces.push({ F: c.fW * pw.F, y: drop + pw.y0 + pw.Hexp / 2, pileWind: true });
-                    if (isF) c.flood.forces.forEach(f => forces.push({ F: c.kf * f.F, y: f.y + flood.local }));
+                    if (isF) c.flood.forces.forEach(f => forces.push({ F: c.kf * f.F, y: f.y + flood.local, debris: !!f.debris }));
+                    // Debris impact shared by the floor diaphragm (sway mode): the struck pile's top is held in translation by the
+                    // other N−1 piles, so it spans as a propped cantilever (fixity → floor) for the impact; the prop reaction
+                    // R = P a²(3L − a)/(2L³) goes into the diaphragm and only R/N returns to this pile as sway shear.
+                    const nSh = isFinite(inp.debrisShareN) ? inp.debrisShareN : 0;
+                    if (sway && nSh > 1) forces.filter(f => f.debris).forEach(f => {
+                        const L = top + dfix, a = f.y + dfix, R = f.F * a * a * (3 * L - a) / (2 * L * L * L);
+                        forces.push({ F: -R * (1 - 1 / nSh), y: top, debrisProp: true });
+                    });
                 }
                 let br;
                 const braced = bracedG;
@@ -784,9 +860,24 @@
                     const Wtop = forces.filter(f => f.wind).reduce((s, f) => s + f.F, 0);
                     br = { H: bg.H, M0: bg.M0, e: bg.e, Lreq: bg.Lreq, f: bg.f, Mmax: Math.max(pr.Mmax, bg.Mmax),
                            Mabove: pr.Mmax, Mbelow: bg.Mmax, Rtop: pr.R, Wtop };
+                } else if (sway) {
+                    // Sway column, top rotation restrained by α (0 = free, 1 = fixed-guided), base fixed at dfix below scour line.
+                    // Fixed-guided top moment from a load F at c above fixity: F c² / (2 Lc); partial fixity scales it by α.
+                    const Lc = top + dfix;
+                    const H = forces.reduce((a, f) => a + f.F, 0);
+                    const Mfx = forces.reduce((a, f) => { const c = f.y + dfix; return a + f.F * c * c / (2 * Lc); }, 0);
+                    const Mtop = Math.sign(Mfx) * Math.min(Math.abs(aL * Mfx), capM);
+                    const Mfix = forces.reduce((a, f) => a + f.F * (f.y + dfix), 0) - Mtop;
+                    const Mg = forces.reduce((a, f) => a + f.F * f.y, 0) - Mtop;         // net moment at scour line
+                    const Lreq = bromsVM(H, Mg, inp.FSlat, drop);
+                    const cS = H > 0 ? H / (9 * su(1.5 * bft + 2, drop) * bft) : 0;
+                    const Mbelow = clay ? Math.abs(Mg) + H * (1.5 * bft + 0.5 * cS) : Math.abs(Mfix);
+                    const Mspan = forces.reduce((m, fi) => Math.max(m, Math.abs(forces.reduce((a, f) => a + (f.y > fi.y ? f.F * (f.y - fi.y) : 0), 0) - Mtop)), 0);
+                    br = { H, M0: Mg, e: H > 0 ? Mg / H : 0, Lreq, f: cS, Mmax: Math.max(Math.abs(Mtop), Mbelow, Mspan), Mfix, Mspan,
+                           Mabove: Math.max(Math.abs(Mtop), Math.abs(Mg)), Mbelow, Rtop: 0, Wtop: 0, Mtop, Lc, aL, capped: Math.abs(aL * Mfx) > capM };
                 } else {
                     br = broms(forces, inp.FSlat, drop);
-                    br.Rtop = 0; br.Wtop = 0; br.Mabove = br.Mmax; br.Mbelow = br.Mmax;
+                    br.Rtop = 0; br.Wtop = 0; br.Mabove = br.Mmax; br.Mbelow = br.Mmax; br.Mtop = 0;
                 }
                 const Lav = Math.max(0, Ltip - drop);
                 // pile self weight (buoyant below water)
@@ -804,7 +895,8 @@
                     const CD = c.CD;
                     const FcStar = tim.Fc * CD * tim.CM_Fc * inp.Ct;
                     const EminP = tim.Emin * tim.CM_E * inp.Ct;
-                    const le = (braced ? inp.KeBr * top : inp.Ke * (top + dfix)) * 12;
+                    const Kef = braced ? inp.KeBr : (sway ? inp.Ke - aL * (inp.Ke - KeFix) : inp.Ke);
+                    const le = (braced ? inp.KeBr * top : Kef * (top + dfix)) * 12;
                     const sr = le / spC.deq;
                     const FcE = 0.822 * EminP / (sr * sr);
                     const al = FcE / FcStar;
@@ -812,12 +904,86 @@
                     const FcP = FcStar * Cp;
                     const FbP = tim.Fb * CD * tim.CM_Fb * inp.Ct * tim.CF_Fb;
                     const ratio = fc >= FcE ? 99 : Math.pow(fc / FcP, 2) + fb / (FbP * (1 - fc / FcE));
-                    st = { fc, fb, FcP, FbP, FcE, Cp, sr, ratio, slenderOK: sr <= 50 };
+                    st = { fc, fb, FcP, FbP, FcE, Cp, sr, ratio, slenderOK: sr <= 50, Kef, le: le / 12 };
                 } else {
                     const Fc = 0.33 * fcp, Fb = 0.45 * Math.sqrt(fcp) * 1.5;
                     st = { fc, fb, FcP: Fc, FbP: Fb, ratio: fc / Fc + fb / Fb, slenderOK: true };
                 }
 
+                function momentsFor(fs) {        // max pile moment & top moment for an arbitrary force set (unbraced modes)
+                    if (sway) {
+                        const Lc = top + dfix, H = fs.reduce((a, f) => a + f.F, 0);
+                        const Mf = fs.reduce((a, f) => { const cc = f.y + dfix; return a + f.F * cc * cc / (2 * Lc); }, 0), Mt = Math.sign(Mf) * Math.min(Math.abs(aL * Mf), capM);
+                        const Mg = fs.reduce((a, f) => a + f.F * f.y, 0) - Mt;
+                        const cS = H > 0 ? H / (9 * su(1.5 * bft + 2, drop) * bft) : 0;
+                        const Mb = clay ? Math.abs(Mg) + H * (1.5 * bft + 0.5 * cS) : Math.abs(fs.reduce((a, f) => a + f.F * (f.y + dfix), 0) - Mt);
+                        const Ms = fs.reduce((m, fi) => Math.max(m, Math.abs(fs.reduce((a, f) => a + (f.y > fi.y ? f.F * (f.y - fi.y) : 0), 0) - Mt)), 0);
+                        return { Mtop: Mt, Mmax: Math.max(Math.abs(Mt), Mb, Ms) };
+                    }
+                    return { Mtop: 0, Mmax: broms(fs, inp.FSlat, drop).Mmax };
+                }
+                function driftOf(fs, Mt) {
+                    const Lc = top + dfix, EI = Esw * spC.I / 1000 / 144;
+                    let d0 = fs.reduce((a, f) => { const cc = f.y + dfix; return a + f.F * cc * cc * (3 * Lc - cc) / 6; }, 0) - (Mt || 0) * Lc * Lc / 2;
+                    const Pe = st.FcE ? st.FcE * spC.A / 1000 : Infinity;
+                    const am = Math.max(0, P) < Pe ? 1 / (1 - Math.max(0, P) / Pe) : 99;
+                    return Math.max(0, d0 / EI) * am;
+                }
+                // Floor sway (unbraced modes): first-order cantilever deflection less the top-moment rotation term, amplified by
+                // 1/(1 − P/Pe) with Pe = FcE·A (NDS sway-column Euler load) — P-delta.
+                let drift = 0, driftLim = top / driftN, ampl = 1, rDrift = 0, rConn = 0;
+                if (!braced && !c.user) {
+                    const Lc = top + dfix, EI = Esw * spC.I / 1000 / 144;               // k-ft²
+                    let d0 = forces.reduce((a, f) => { const cc = f.y + dfix; return a + f.F * cc * cc * (3 * Lc - cc) / 6; }, 0);
+                    d0 -= (br.Mtop || 0) * Lc * Lc / 2;
+                    const Pe = st.FcE ? st.FcE * spC.A / 1000 : Infinity;
+                    ampl = Math.max(0, P) < Pe ? 1 / (1 - Math.max(0, P) / Pe) : 99;
+                    drift = Math.max(0, d0 / EI) * ampl;
+                    rDrift = drift / driftLim;
+                }
+                let notch = null;
+                if (sway && !c.user && conn.type === 'notched') {
+                    // Net section at the notch (top): width b - 2dn, depth b in the bending plane; FEMA P-55 limits removal to 50%.
+                    const An = conn.bNet * b, Sn = conn.bNet * b * b / 6;
+                    const FcStar = st.Cp ? st.FcP / st.Cp : st.FcP;
+                    const net = (Math.max(P, 0) * 1000 / An) / FcStar + Math.abs(br.Mtop || 0) * 12000 / Sn / st.FbP;
+                    notch = { An, Sn, net, removal: conn.removal };
+                    rConn = Math.max(net, conn.removal / 0.5);
+                } else if (sway && !c.user) rConn = conn.Mcap > 0 ? Math.abs(br.Mtop || 0) / conn.Mcap : (Math.abs(br.Mtop || 0) > 1e-6 ? 99 : 0);
+                // ---- Biaxial (orthogonal direction Y, wind only; flood acts in the X / analysis direction) ----
+                // Y has the same top condition. Checks: Case 1 in Y alone, and ASCE 7-22 Fig. 27.3-8 Case 3
+                // (0.75 X wind + 0.75 Y wind simultaneously, flood in X unchanged) with NDS 3.9.2 Eq. 3.9-3.
+                let biax = null;
+                const WhY = isFinite(inp.WhY) ? inp.WhY : 0;
+                if (WhY > 0 && !braced && !c.user && c.fW > 0 && tim) {
+                    const fy = k => [{ F: k * c.fW * WhY, y: top, wind: true }].concat(pw.F > 0 ? [{ F: k * c.fW * pw.F, y: drop + pw.y0 + pw.Hexp / 2 }] : []);
+                    const fx75 = forces.map(f => (f.wind || f.pileWind) ? Object.assign({}, f, { F: 0.75 * f.F }) : f);
+                    const Y1 = momentsFor(fy(1)), Y3 = momentsFor(fy(0.75)), X3 = momentsFor(fx75);
+                    const amp = 1 - st.fc / st.FcE;
+                    const rY1 = Math.pow(st.fc / st.FcP, 2) + (Y1.Mmax * 12000 / spC.S) / (st.FbP * amp);
+                    const r3 = Math.pow(st.fc / st.FcP, 2) + (X3.Mmax * 12000 / spC.S) / (st.FbP * amp) + (Y3.Mmax * 12000 / spC.S) / (st.FbP * amp);
+                    const dY1 = driftOf(fy(1), Y1.Mtop), dX3 = driftOf(fx75, X3.Mtop), dY3 = driftOf(fy(0.75), Y3.Mtop);
+                    const d3 = Math.sqrt(dX3 * dX3 + dY3 * dY3);
+                    biax = { rY1, r3, MY1: Y1.Mmax, MX3: X3.Mmax, MY3: Y3.Mmax, MtopY: Y1.Mtop, dY1, d3 };
+                    st.ratioUni = st.ratio; st.ratio = Math.max(st.ratio, rY1, r3);
+                    drift = Math.max(drift, dY1, d3); rDrift = drift / driftLim;
+                    if (sway) rConn = Math.max(rConn, conn.Mcap > 0 ? Math.abs(Y1.Mtop) / conn.Mcap : 99);
+                }
+                // Serviceability-wind drift option: drift checked under wind only (no flood / storm scour) at svcF × strength wind
+                // (IBC 1604.3 note f: 0.42 × Vult-level wind for deflection ≈ 0.7 × ASD; ASCE 7 App. CC 10-yr MRI ≈ 0.3–0.45 × strength).
+                // Strength-level stability/P-delta stays in the NDS 3.9.2 check; the strength-level drift is still reported (driftStr).
+                let driftStr = drift;
+                if (inp.driftBasis === 'service' && !braced && !c.user && tim) {
+                    const k = (isFinite(inp.svcF) ? inp.svcF : 0.42) / 0.6;
+                    if (isF || !(c.fW > 0)) { drift = 0; rDrift = 0; }
+                    else {
+                        const fsS = forces.map(f => (f.wind || f.pileWind) ? Object.assign({}, f, { F: k * f.F }) : f);
+                        drift = driftOf(fsS, momentsFor(fsS).Mtop);
+                        if (WhY > 0) { const fyS = [{ F: k * c.fW * WhY, y: top, wind: true }].concat(pw.F > 0 ? [{ F: k * c.fW * pw.F, y: drop + pw.y0 + pw.Hexp / 2 }] : []);
+                            drift = Math.max(drift, driftOf(fyS, momentsFor(fyS).Mtop)); }
+                        rDrift = drift / driftLim;
+                    }
+                }
                 // geotechnical
                 const Qs_c = skin(Lav, inp.Kc, isF, drop), Qb = endBearing(Lav, isF, drop), Qs_t = skin(Lav, inp.Kt, isF, drop);
                 const Qa_c = (Qs_c + Qb) / inp.FSc, Qa_t = Qs_t / inp.FSt;
@@ -826,7 +992,7 @@
                     id: c.id, name: c.name, CD: c.CD, dScour, P, Wp, Pc, H: br.H, M0: br.M0, e: br.e, Mmax: br.Mmax, f: br.f,
                     Rtop: br.Rtop, Wtop: br.Wtop, Mabove: br.Mabove, Mbelow: br.Mbelow, Lreq: br.Lreq, tipReq: br.Lreq + drop, Lav, drop,
                     st, Qs_c, Qb, Qa_c, Qs_t, Qa_t, T,
-                    rStruct: st.ratio, rEmbed: Lav > 0 ? br.Lreq / Lav : (br.Lreq > 0 ? 99 : 0),
+                    drift, driftStr, driftLim, ampl, rDrift, rConn, notch, aL, Mcapped: !!br.capped, biax, Mtop: br.Mtop || 0, rStruct: st.ratio, rEmbed: Lav > 0 ? br.Lreq / Lav : (br.Lreq > 0 ? 99 : 0),
                     rComp: Pc > 0 ? Pc / Qa_c : 0, rUplift: T > 0 ? (Qa_t > 0 ? T / Qa_t : 99) : 0
                 };
             }
@@ -837,12 +1003,12 @@
             tipDesign = Math.max(tipDesign, 5);
             const rows = combos.map(c => evalCombo(c, tipDesign));
             const gov = {};
-            ['rStruct', 'rEmbed', 'rComp', 'rUplift'].forEach(k => {
+            ['rStruct', 'rEmbed', 'rComp', 'rUplift', 'rDrift', 'rConn'].forEach(k => {
                 let best = rows[0];
                 rows.forEach(r => { if (r[k] > best[k]) best = r; });
                 gov[k] = { ratio: best[k], id: best.id, name: best.name };
             });
-            return { sp, taper, Kp, delta, api, Nq, gp, flood, tim, dfix, rows, gov, pw, bracedG, braceFoot: bf,
+            return { sp, taper, Kp, delta, api, Nq, gp, flood, tim, dfix, rows, gov, pw, bracedG, braceFoot: bf, sway, alpha, KeFix, conn, driftN, Esw,
                      tipUsed: isNaN(inp.Ltip) ? tipDesign : inp.Ltip, tipGiven: !isNaN(inp.Ltip),
                      tipReqMax: Math.max.apply(null, rows.map(r => r.tipReq)), comps };
         }
@@ -854,12 +1020,14 @@
             { k: 'rStruct', lbl: 'Structural: combined axial + bending above & below grade (NDS 3.9.2 / ASD)' },
             { k: 'rComp', lbl: 'Axial compression capacity (skin + tip, FS)' },
             { k: 'rUplift', lbl: 'Uplift / pullout (skin + pile weight, FS)' },
-            { k: 'slender', lbl: 'Column slenderness le/d ≤ 50 (NDS 3.7.1.4)' }
+            { k: 'slender', lbl: 'Column slenderness le/d ≤ 50 (NDS 3.7.1.4)' },
+            { k: 'rDrift', lbl: 'Floor sway / drift incl. P-delta (unbraced modes)' },
+            { k: 'rConn', lbl: 'Top connection develops the fixity moment (sway frame)' }
         ];
         // Collect the governing ratio of each check from a pileDesign() result
         function checkRatios(res) {
             const out = {};
-            ['rStruct', 'rEmbed', 'rComp', 'rUplift'].forEach(k => { out[k] = res.gov[k]; });
+            ['rStruct', 'rEmbed', 'rComp', 'rUplift', 'rDrift', 'rConn'].forEach(k => { out[k] = res.gov[k]; });
             let best = { ratio: 0, id: '–', name: res.tim ? '' : 'n/a (concrete)' };
             if (res.tim) res.rows.forEach(r => { const q = (r.st.sr || 0) / 50; if (q > best.ratio) best = { ratio: q, id: r.id, name: r.name }; });
             out.slender = best;
@@ -958,7 +1126,7 @@
             const modeTxt = inp.embedMode === 'manual' ? 'Manual tip depth (checked as entered)' : `Auto-solved: scan ${f2(Math.max(0.5, inp.minEmbed), 1)}–${f2(inp.maxEmbed, 0)} ft in ${f2(sol.step || inp.embStep, 1)} ft steps; first depth where every check passes`;
             const ctl = sol.controls[0] === 'minEmbed' ? 'Minimum embedment (' + f2(inp.minEmbed, 1) + ' ft) — no check controls'
                         : sol.controls.map(checkLabel).join(' + ');
-            const pileTxt = `${inp.d}${inp.shape === 'square' ? 'x' + inp.d + '" square' : '" round'}${pack.sol.res.taper ? ' (butt; tip ' + inp.dTip + '")' : ''}, ${inp.topCond === 'braced' ? 'braced to grade (brace foot ' + f2(pack.sol.res.braceFoot, 1) + ' ft)' : 'NOT braced — free cantilever'}, ${inp.soilType === 'clay' ? 'clay su ' + inp.suTop + ' + ' + inp.suGrad + ' psf/ft' : 'sand φ ' + inp.phi + '°'}`;
+            const pileTxt = `${inp.d}${inp.shape === 'square' ? 'x' + inp.d + '" square' : '" round'}${pack.sol.res.taper ? ' (butt; tip ' + inp.dTip + '")' : ''}, ${inp.topCond === 'braced' ? 'braced to grade (brace foot ' + f2(pack.sol.res.braceFoot, 1) + ' ft)' : inp.topCond === 'sway' ? 'sway frame, top fixity α ' + f2(effAlpha(pack.sol.res), 2) + (pack.sol.res.conn.type === 'notched' ? ' (notched + doubled, M cap ' + f2(pack.sol.res.conn.Mcap, 1) + ' k-ft, k ' + f2(pack.sol.res.conn.kRot, 0) + ' k-ft/rad)' : pack.sol.res.conn.override ? ' (moment connection ' + f2(pack.sol.res.conn.Mcap, 1) + ' k-ft)' : ' (bolted, ' + f2(pack.sol.res.conn.Mcap, 2) + ' k-ft)') : 'NOT braced — free cantilever'}, ${inp.soilType === 'clay' ? 'clay su ' + inp.suTop + ' + ' + inp.suGrad + ' psf/ft' : 'sand φ ' + inp.phi + '°'}`;
             let h = `<h2>Embedment Solution${opts.title ? ' — ' + opts.title : ''}</h2>
                 <p><span class="badge ${st.cls}">${st.text}</span></p>
                 <table><tr><th>Item</th><th>Value</th></tr>
@@ -976,6 +1144,10 @@
                 h += `<tr><td style="text-align:left">${c.lbl}</td><td class="${cls(g.ratio)}">${f2(g.ratio)}</td><td style="text-align:left">${g.id}${g.name ? ': ' + g.name : ''}</td><td>${g.ratio > 1 ? '❌ FAIL' : '✅ PASS'}</td></tr>`;
             });
             h += '</table>';
+            if (inp.topCond === 'sway' && sol.checks.rConn.ratio > 1)
+                h += `<p class="fail" style="padding:6px;font-weight:bold">❌ TOP CONNECTION CANNOT DEVELOP THE FIXITY MOMENT (ratio ${f2(sol.checks.rConn.ratio, 1)}): bolt group capacity ${f2(sol.res.conn.Mcap, 2)} k-ft vs required top moment. Top fixity cannot be counted — treat the pile as free-top, brace to grade, or design a moment connection (enter its capacity).</p>`;
+            if (!sol.ok && inp.topCond !== 'braced' && sol.checks.rDrift.ratio > 1)
+                h += `<p class="fail" style="padding:6px;font-weight:bold">❌ FLOOR SWAY EXCEEDS LIMIT (ratio ${f2(sol.checks.rDrift.ratio)}; limit = height above scour / ${sol.res.driftN}). Not fixed by embedment — brace to grade, add top fixity or upsize.</p>`;
             if (!sol.ok && inp.topCond !== 'braced' && sol.checks.rStruct.ratio > 1)
                 h += `<p class="fail" style="padding:6px;font-weight:bold">❌ UNBRACED PILE FAILS IN BENDING (ratio ${f2(sol.checks.rStruct.ratio)}, ${sol.checks.rStruct.id}). The free cantilever from the floor to the point of fixity cannot carry the wind share + flood loads at any embedment — brace the piles to grade or increase the pile size.</p>`;
             h += '<p style="font-size:0.85em">No pile-head deflection check exists in this tool yet (none is run). Lateral embedment uses Broms ultimate capacity with FS; serviceability deflection should be checked separately.</p>';
@@ -1017,16 +1189,18 @@
 
         function comboTable(res) {
             let t = `<table class="combo"><tr><th>Combo</th><th>P (k)</th><th>Pile wt (k)</th><th>V grade (k)</th><th>M grade (k-ft)</th><th>M above / below grade (k-ft)</th><th>CD</th>
-                     <th>Fc' / Fb' (psi)</th><th>Struct.</th><th>L req / avail (ft)</th><th>Embed.</th><th>Comp. (k) dem/allow</th><th>Comp.</th><th>Uplift (k) dem/allow</th><th>Uplift</th></tr>`;
+                     <th>Fc' / Fb' (psi)</th><th>Struct.</th><th>L req / avail (ft)</th><th>Embed.</th><th>Comp. (k) dem/allow</th><th>Comp.</th><th>Uplift (k) dem/allow</th><th>Uplift</th><th>Drift (in) / ratio</th><th>Top M (k-ft) / conn.</th><th>Biaxial: Y alone / Case 3</th></tr>`;
             res.rows.forEach(r => {
                 t += `<tr><td style="text-align:left">${r.id}: ${r.name}</td><td>${f2(r.P)}</td><td>${f2(r.Wp)}</td><td>${f2(r.H)}</td><td>${f2(r.M0, 1)}</td><td>${f2(r.Mabove, 1)} / ${f2(r.Mbelow, 1)}</td><td>${r.CD}</td>
                       <td>${f2(r.st.FcP, 0)} / ${f2(r.st.FbP, 0)}</td><td class="${cls(r.rStruct)}">${f2(r.rStruct)}</td>
                       <td>${f2(r.Lreq, 1)} / ${f2(r.Lav, 1)}</td><td class="${cls(r.rEmbed)}">${f2(r.rEmbed)}</td>
                       <td>${f2(Math.max(r.Pc, 0))} / ${f2(r.Qa_c)}</td><td class="${cls(r.rComp)}">${f2(r.rComp)}</td>
-                      <td>${f2(r.T)} / ${f2(r.Qa_t)}</td><td class="${cls(r.rUplift)}">${f2(r.rUplift)}</td></tr>`;
+                      <td>${f2(r.T)} / ${f2(r.Qa_t)}</td><td class="${cls(r.rUplift)}">${f2(r.rUplift)}</td>
+                      <td class="${cls(r.rDrift)}">${f2(r.drift * 12)} / ${f2(r.rDrift)}</td><td class="${cls(r.rConn)}">${f2(r.Mtop, 1)} / ${f2(r.rConn, 1)}</td><td>${r.biax ? f2(r.biax.rY1) + ' / ' + f2(r.biax.r3) : '–'}</td></tr>`;
             });
             return t + '</table>';
         }
+        function effAlpha(res) { if (res.conn && res.conn.type === 'notched') { const r = (res.rows || []).filter(x => x.aL != null); return r.length ? Math.max(...r.map(x => x.aL)) : res.alpha; } return res.alpha; }
         function govTable(res) {
             const g = res.gov, lbl = { rStruct: 'Structural (NDS 3.9.2 / ASD)', rEmbed: 'Lateral embedment (Broms)', rComp: 'Axial compression (skin + end bearing)', rUplift: 'Uplift / pullout (skin + pile weight)' };
             let t = '<table><tr><th>Check</th><th>Governing ratio</th><th>Combo</th><th>Result</th></tr>';
@@ -1059,6 +1233,7 @@
                 const mx = res.rows.reduce((a, r) => Math.max(a, (r.Rtop || 0) + (r.Wtop || 0)), 0);
                 h += `<p><strong>Braced to grade:</strong> pile top pinned at the floor framing; braces land ${f2(res.braceFoot, 1)} ft above grade. Above grade the pile is a propped cantilever (fixed ${f2(res.dfix, 1)} ft below scour line) under flood + pile wind; le = ${inp.KeBr} × (scour line to framing). The building wind share (${f2(inp.Wh)} k strength) and the prop reaction (max ${f2(mx)} k incl. wind) return through the braces to the brace foot, so the soil check (Broms, FS ${inp.FSlat}) and the below-grade bending use ALL lateral loads, with the wind share applied at the brace foot. Bending ratio uses max(above-grade propped moment, below-grade Broms moment).</p>`;
             }
+            else if (inp.topCond === 'sway') h += `<p><strong>Sway frame — top fixed by floor framing, no X/knee bracing:</strong> each pile is a sway column from the floor to fixity ${f2(res.dfix, 1)} ft below the scour line, top rotation restrained by α = ${f2(effAlpha(res), 2)} (1 = fixed-guided, double curvature; top moment = α Σ F c²/(2Lc)). Ke = ${f2(inp.Ke - effAlpha(res) * (inp.Ke - res.KeFix), 2)} (interpolated between ${inp.Ke} free and ${res.KeFix} fixed-top sway, NDS App. G); NDS 3.9.2 with the (1 − fc/FcE) sway amplification. Drift = first-order sway × 1/(1 − P/Pe), limit = height above scour / ${res.driftN}. Top connection: ${res.conn.type === 'notched' ? 'notched + doubled beam: ' + res.conn.faces + ' faces, ply t ' + res.conn.t + ' in, beam depth ' + res.conn.db + ' in, notch ' + res.conn.dn + ' in per face (' + f2(res.conn.removal * 100, 0) + '% of section removed; FEMA P-55 limit 50%). Bearing couple per face Fc⊥′ ' + res.conn.Fperp + ' psi × t × b/3 = ' + f2(res.conn.Cb, 2) + ' k × lever 2b/3 = ' + f2(res.conn.Mbear, 2) + ' k-ft' + (res.conn.shoulder ? '' : ' (NOT counted — seat only)') + ' + bolts ' + f2(res.conn.Mb1, 2) + ' k-ft → M cap ' + f2(res.conn.Mcap, 2) + ' k-ft; rotational stiffness k = ' + f2(res.conn.kRot, 0) + ' k-ft/rad → α = kL/(EI + kL); top moment limited to M cap; net section at the notch checked with P + M top. ' : ''}${res.conn.type === 'notched' ? '' : res.conn.override ? 'designed moment connection, M cap ' + f2(res.conn.Mcap, 1) + ' k-ft' : res.conn.n + ' bolts @ ' + res.conn.sIn + ' in × ' + res.conn.ends + ' beam end(s), Z′ ' + res.conn.Z + ' k → M cap = Z′Σr²/r_max = ' + f2(res.conn.Mcap, 2) + ' k-ft (ignores bolt-hole slip, so an upper bound)'}; shear capacity ${f2(res.conn.Vcap, 2)} k.</p>`;
             else h += `<p><strong>Not braced to grade:</strong> free cantilever from the floor (wind share ${f2(inp.Wh)} k strength at the pile top) to the point of fixity, plus pile wind and flood; le = Ke ${inp.Ke} × (top + fixity).</p>`;
             if (res.pw && res.pw.F > 0) h += `<p>Wind on exposed pile (ASCE 7-22 §29.4): F = qz G Cf b Hexp = ${f2(res.pw.q, 1)} × 0.85 × ${res.pw.Cf} × ${f2(inp.d / 12)} ft × ${f2(res.pw.Hexp, 1)} ft = ${f2(res.pw.F)} k (strength), at mid-height of the exposed length.</p>`;
             if (!res.comps) h += '<p><em>No load components entered — showing the original user case only. Enter D, L, Lr, W in the Advanced section to run all ASCE 7 combinations.</em></p>';
@@ -1082,7 +1257,9 @@
                 ['Pile tip below grade', `${f2(res.tipUsed, 1)} ft (${res.tipSource || (res.tipGiven ? 'input' : 'design')})`],
                 ['Round pile taper', res.taper ? `butt ${inp.d}" → tip ${inp.dTip}" (bending/lateral at scour-line diameter, skin by local perimeter, end bearing on tip area)` : 'uniform'],
                 ['Embedment mode / length target', `${inp.embedMode === 'manual' ? 'Manual' : 'Auto-solve'} (min ${inp.minEmbed} / max ${inp.maxEmbed} ft, step ${inp.embStep} ft) / ${inp.maxLen} ft ${inp.lenMode === 'hard' ? 'hard limit' : 'advisory'}`],
-                ['Braced to grade', inp.topCond === 'braced' ? `YES — brace foot ${f2(res.braceFoot, 1)} ft above grade; wind share enters at brace foot and goes to soil; top pinned at framing (Ke ${inp.KeBr}); propped cantilever above grade, fixity ${f2(res.dfix, 1)} ft below scour line` : 'NO — free cantilever from floor to fixity (Ke ' + inp.Ke + ')'],
+                ['Orthogonal (Y) wind share / biaxial', inp.WhY > 0 ? `${inp.WhY} k strength at the floor (+ pile wind); checks Y alone and ASCE 7 Case 3 (0.75X + 0.75Y, flood in X), NDS 3.9.2 Eq. 3.9-3, drift SRSS` : 'uniaxial (Y not entered)'],
+                ['Sway-frame top fixity', inp.topCond === 'sway' ? `α ${f2(effAlpha(res), 2)}; Ke ${f2(inp.Ke - effAlpha(res) * (inp.Ke - res.KeFix), 2)}; connection M cap ${f2(res.conn.Mcap, 2)} k-ft (${res.conn.override ? 'designed moment connection' : res.conn.n + ' bolts @ ' + res.conn.sIn + ' in, ' + res.conn.ends + ' end(s), Z′ ' + res.conn.Z + ' k'}); drift limit h/${res.driftN}` : 'n/a'],
+                ['Braced to grade', inp.topCond === 'sway' ? 'NO — sway frame, top fixed by floor framing' : inp.topCond === 'braced' ? `YES — brace foot ${f2(res.braceFoot, 1)} ft above grade; wind share enters at brace foot and goes to soil; top pinned at framing (Ke ${inp.KeBr}); propped cantilever above grade, fixity ${f2(res.dfix, 1)} ft below scour line` : 'NO — free cantilever from floor to fixity (Ke ' + inp.Ke + ')'],
                 ['Column stability Ke / fixity / Ct', `${inp.Ke} / ${f2(res.dfix, 1)} ft / ${inp.Ct}`],
                 ['Flood zone / BFE / grade', `${inp.zone} / ${f2(inp.BFE, 2)} / ${f2(inp.G, 2)} ft`]
             ].map(r => `<tr><td style="text-align:left">${r[0]}</td><td style="text-align:left">${r[1]}</td></tr>`).join('');
@@ -1096,7 +1273,7 @@
                 <h2>References</h2><ul style="font-size:9pt">
                 <li>ASCE 7-22 §2.4.1 ASD load combinations; §2.4.2 flood loads (1.5Fa V/Coastal A, 0.75Fa A zones); Ch. 5 flood loads (§5.4.4 breaking wave on piles, §5.4.3 hydrodynamic, §5.4.5 impact).</li>
                 <li>FEMA P-55 Coastal Construction Manual, Ch. 8: Hb = 0.78ds, local scour ≈ 2D (Eq. 8.10/8.11 scour), debris impact Eq. 8.9 Fi = W V CD CB CStr (Table 8-3 CD, Table 8-4 CB, CStr 0.2 timber pile).</li><li>ASCE 7-22 Ch. 26–27 directional procedure (Kz Table 26.11-1, Cp Fig. 27.3-1, §27.3.1.1.2 elements below the floor), §29.4 wind on open structures/members (Cf). NDS Table 2.3.2: CD = 2.0 impact (not permitted for members treated with waterborne preservatives to marine retentions — verify treatment).</li>
-                <li>AWC NDS 2018: §3.7 column stability Cp, §3.9.2 combined bending + compression, Table 4D sawn timbers, Table 6A round piles, CD per Table 2.3.2.</li>
+                <li>Sway frame: fixed-guided column (top moment F c²/2L per load), NDS App. G Ke (2.1 free / 1.2 rotation fixed, translation free), P-delta 1/(1 − P/Pe); drift limit h/N (default h/100 at ASD, ≈ h/200 at 10-yr service wind per ASCE 7 App. CC pressure ratio ≈ 0.47).</li><li>AWC NDS 2018: §3.7 column stability Cp, §3.9.2 combined bending + compression, Table 4D sawn timbers, Table 6A round piles, CD per Table 2.3.2.</li>
                 <li>Broms (1964) lateral resistance of piles in cohesionless soil (short free-head pile; max moment depth 0.82√(H/γ'DKp)).</li>
                 <li>API RP 2A-WSD §6.4.2 α method for clay (α = 0.5ψ^-0.5 / 0.5ψ^-0.25), end bearing 9su; Broms (1964) lateral resistance in cohesive soil (9suD, top 1.5D neglected).</li>
                 <li>API RP 2A-WSD Table 6.4.3-1 limiting skin friction and end bearing for sand; β = K·tanδ effective-stress method.</li></ul>
