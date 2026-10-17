@@ -25,11 +25,15 @@
         table.combo th, table.combo td { padding: 4px; font-size: 0.82em; }
         .fail { background: #ffd6d6; font-weight: bold; }
         .ok { background: #dcf5dc; }
+        .amber { background: #ffe7b3; font-weight: bold; }
+        .badge { display: inline-block; padding: 8px 14px; border-radius: 6px; font-size: 1.15em; font-weight: bold; }
+        .badge.ok { background: #2e8b3d; color: white; } .badge.amber { background: #e69500; color: white; } .badge.fail { background: #c62828; color: white; }
+        #embedResults { margin-top: 30px; padding: 20px; background: #fffbe9; border: 2px solid #e0c870; border-radius: 8px; }
         #calcSheet { display: none; }
         @media print {
             body { background: white; margin: 0; }
             .container { box-shadow: none; max-width: none; padding: 0; }
-            .no-print, #results, #advResults { display: none !important; }
+            .no-print, #results, #advResults, #embedResults { display: none !important; }
             #calcSheet { display: block !important; font-size: 10pt; }
             #calcSheet table th, #calcSheet table td { padding: 3px; font-size: 8.5pt; }
             #calcSheet th { background: #ddd !important; color: black; }
@@ -94,6 +98,8 @@
                 <option value="SP" selected>Southern Pine (Fc=1200 psi, Fb=2400 psi)</option>
                 <option value="DF">Douglas Fir (Fc=1250 psi, Fb=2450 psi)</option>
             </select>
+            <label>Round pile tip diameter (in; blank = uniform/prismatic, size d above = butt)</label>
+            <input type="number" id="dTip" value="" step="0.5">
             </div>
             <div id="sawnTimberOptions" class="conditional">
             <label>Sawn Timber Species/Grade (NDS Supplement Table 4D, 5"x5" and larger)</label>
@@ -115,6 +121,25 @@
         
         <label>Trial Pile Size d (inches) — diameter (round) or side width (square)</label>
         <input type="number" id="d_trial" value="12" step="0.5">
+
+        <h2>Embedment &amp; Pile Length</h2>
+        <div class="grid2">
+            <div><label>Embedment mode</label>
+                <select id="embedMode">
+                    <option value="auto" selected>Auto — solve minimum embedment where every check passes</option>
+                    <option value="manual">Manual — check the tip depth I enter</option>
+                </select></div>
+            <div><label>Manual tip depth below LAG (ft; Manual mode only; blank = lateral-only design)</label><input type="number" id="Ltip" value="" step="0.1"></div>
+            <div><label>Max total pile length target (ft; embedment + h)</label><input type="number" id="maxLen" value="40" step="1"></div>
+            <div><label>Length target treatment</label>
+                <select id="lenMode">
+                    <option value="advisory" selected>Advisory — PASS (amber) if over target</option>
+                    <option value="hard">Hard limit — FAIL if over target</option>
+                </select></div>
+            <div><label>Solver: minimum embedment (ft)</label><input type="number" id="minEmbed" value="5" step="0.5"></div>
+            <div><label>Solver: maximum embedment searched (ft)</label><input type="number" id="maxEmbed" value="80" step="1"></div>
+            <div><label>Solver: depth step (ft)</label><input type="number" id="embStep" value="0.5" step="0.1" min="0.1"></div>
+        </div>
 
         <details id="advInputs">
             <summary>Advanced: Load Components, Geotechnical Capacity, Flood Loads (ASCE 7-22) — optional</summary>
@@ -143,7 +168,6 @@
                 <div><label>Clay: su at existing grade (psf)</label><input type="number" id="suTop" value="500" step="50"></div>
                 <div><label>Clay: su increase with depth (psf/ft)</label><input type="number" id="suGrad" value="0" step="5"></div>
                 <div><label>Clay: su cap (psf)</label><input type="number" id="suMax" value="2000" step="50"></div>
-                <div><label>Pile tip depth below existing grade (ft; blank = use required)</label><input type="number" id="Ltip" value="" step="0.1"></div>
                 <div><label>Depth to groundwater below grade dw (ft)</label><input type="number" id="dw" value="0" step="0.5"></div>
                 <div><label>Moist unit weight above water γm (pcf)</label><input type="number" id="gammaM" value="110" step="1"></div>
                 <div><label>Interface friction angle δ (deg; blank = φ − 5)</label><input type="number" id="delta" value="" step="1"></div>
@@ -193,6 +217,7 @@
         <button onclick="window.print()" style="background:#555;">🖨 Print Calc Sheet</button>
       </div>
         
+        <div id="embedResults"></div>
         <div id="results"></div>
         <div id="advResults"></div>
         <div id="calcSheet"></div>
@@ -330,7 +355,8 @@
             const sizeWord = shape === 'square' ? 'Size (side)' : 'Diameter';
             // ===================== OUTPUT =====================
             let html = `
-                <h2>Results - ${materialName}</h2>
+                <h2>Quick Check (original single-case method) - ${materialName}</h2>
+                <p style="font-size:0.85em;">Legacy free-head sand Broms check on P, Hx/Hy only. Use the <strong>Embedment Solution</strong> above for the design embedment and total length.</p>
                 <table>
                     <tr><th>Parameter</th><th>Value</th></tr>
                     <tr><td>Total Lateral Load H</td><td>${H.toFixed(2)} kips</td></tr>
@@ -353,10 +379,13 @@
             // ===================== ADVANCED CHECKS (combos, geotech, flood) =====================
             try {
                 const inp = readInputs();
-                const res = pileDesign(inp);
+                const pack = runEmbedment(inp);
+                const res = pack.res;
+                document.getElementById('embedResults').innerHTML = renderEmbedPanel(inp, pack);
                 document.getElementById('advResults').innerHTML = renderAdvanced(inp, res);
-                document.getElementById('calcSheet').innerHTML = renderCalcSheet(inp, res);
+                document.getElementById('calcSheet').innerHTML = renderCalcSheet(inp, res, pack);
             } catch (err) {
+                const er = document.getElementById('embedResults'); if (er) er.innerHTML = '<p>Embedment solver unavailable: ' + err.message + '</p>';
                 document.getElementById('advResults').innerHTML = '<p>Advanced checks unavailable: ' + err.message + '</p>';
             }
         }
@@ -380,7 +409,11 @@
                 zone: ['AE', 'CA', 'VE'].indexOf(strVal('zone', 'none')) >= 0 ? strVal('zone', 'none') : 'none',
                 BFE: numVal('BFE', NaN), G: numVal('Gelev', NaN), Esw: numVal('Esw', NaN), V: numVal('Vel', NaN),
                 erosion: numVal('erosion', 0), localScour: numVal('localScour', NaN), dragA: numVal('dragA', NaN),
-                debrisOn: boolVal('debrisOn', true), debrisW: numVal('debrisW', 1000)
+                debrisOn: boolVal('debrisOn', true), debrisW: numVal('debrisW', 1000),
+                dTip: numVal('dTip', NaN),
+                embedMode: strVal('embedMode', 'auto') === 'manual' ? 'manual' : 'auto',
+                maxLen: numVal('maxLen', 40), lenMode: strVal('lenMode', 'advisory') === 'hard' ? 'hard' : 'advisory',
+                minEmbed: numVal('minEmbed', 5), maxEmbed: numVal('maxEmbed', 80), embStep: numVal('embStep', 0.5)
             };
         }
 
@@ -461,10 +494,13 @@
 
         // Main engine — pure function of the input object
         function pileDesign(inp) {
-            const b = inp.d;                               // in
-            const bft = b / 12;
+            const b = inp.d;                               // in (butt diameter for a tapered round pile)
+            let bft = b / 12;                              // reassigned per combo for tapered piles (diameter at scour line)
             const sp = sectionProps(inp.shape, b);
             const Aft = sp.A / 144, perft = sp.per / 12;
+            // Tapered round timber pile (ASTM D25): diameter varies linearly from butt (d, at top) to dTip (at tip)
+            const taper = inp.shape === 'round' && inp.pileType === 'timber' && inp.dTip > 0 && inp.dTip < inp.d;
+            let geo = { perAt: () => perft, Atip: Aft };   // set per combo in evalCombo
             const gs = inp.gammaEff / 1000;                // kcf
             const gm = inp.gammaM / 1000;
             const phiR = inp.phi * Math.PI / 180;
@@ -494,13 +530,13 @@
                     if (clay) {   // API RP 2A alpha method: α = 0.5ψ^-0.5 (ψ ≤ 1), 0.5ψ^-0.25 (ψ > 1), α ≤ 1
                         const c = su(z, drop), psi = c / Math.max(sig(z, submerged), 1e-6);
                         const al = Math.min(1, psi <= 1 ? 0.5 / Math.sqrt(psi) : 0.5 / Math.pow(psi, 0.25));
-                        Q += al * c * perft * dz;
-                    } else Q += Math.min(K * sig(z, submerged) * tanD, api.fslim) * perft * dz;
+                        Q += al * c * geo.perAt(z) * dz;
+                    } else Q += Math.min(K * sig(z, submerged) * tanD, api.fslim) * geo.perAt(z) * dz;
                 }
                 return Q;
             }
             function endBearing(Le, submerged, drop) {
-                return clay ? 9 * su(Le, drop) * Aft : Math.min(Nq * sig(Le, submerged), api.qlim) * Aft;
+                return clay ? 9 * su(Le, drop) * geo.Atip : Math.min(Nq * sig(Le, submerged), api.qlim) * geo.Atip;
             }
             // Broms short free-head pile in clay (top 1.5D ignored, 9 su D): returns required L for V, M at grade
             function bromsClayL(V, M, FS, drop) {
@@ -598,6 +634,17 @@
                 const isF = !!c.flood;
                 const drop = isF ? flood.S : 0;                 // ground lost to erosion + local scour
                 const top = inp.h + drop;                       // pile top above reference (scour bottom)
+                const Ltip = isNaN(inp.Ltip) ? LtipDesign : inp.Ltip;
+                const Ltot = Ltip + inp.h;
+                let spC = sp, Aavg = Aft, dScour = b;
+                if (taper) {
+                    const dAt = s => b - (b - inp.dTip) * Math.min(Math.max(s / Ltot, 0), 1);   // s = ft below pile top
+                    dScour = dAt(top);
+                    spC = sectionProps('round', dScour);      // bending / stability / lateral at the scour line
+                    Aavg = Math.PI / 4 * (b * b + b * inp.dTip + inp.dTip * inp.dTip) / 3 / 144;
+                    geo = { perAt: z => Math.PI * dAt(top + z) / 12, Atip: Math.PI * inp.dTip * inp.dTip / 4 / 144 };
+                    bft = dScour / 12;
+                } else geo = { perAt: () => perft, Atip: Aft };
                 let P, forces = [];
                 if (c.user) {
                     P = inp.P;
@@ -620,26 +667,24 @@
                     br = broms(forces, inp.FSlat, drop);
                     br.Rtop = 0; br.Wtop = 0;
                 }
-                const Ltip = isNaN(inp.Ltip) ? LtipDesign : inp.Ltip;
                 const Lav = Math.max(0, Ltip - drop);
-                const Ltot = Ltip + inp.h;
                 // pile self weight (buoyant below water)
                 const wl = isF ? Ltip + Math.max(0, flood.Esw - flood.G) : Math.max(0, Ltip - inp.dw);
                 const Lsub = Math.min(Ltot, wl);
-                const Wp = Aft * (gp * (Ltot - Lsub) + (gp - 0.064) * Lsub);
+                const Wp = Aavg * (gp * (Ltot - Lsub) + (gp - 0.064) * Lsub);
                 const fD = c.user ? 1 : c.fD;
                 const Pc = P + fD * Wp;
 
                 // structural
                 let st;
-                const fc = Math.max(P, 0) * 1000 / sp.A;
-                const fb = br.Mmax * 12000 / sp.S;
+                const fc = Math.max(P, 0) * 1000 / spC.A;
+                const fb = br.Mmax * 12000 / spC.S;
                 if (tim) {
                     const CD = c.CD;
                     const FcStar = tim.Fc * CD * tim.CM_Fc * inp.Ct;
                     const EminP = tim.Emin * tim.CM_E * inp.Ct;
                     const le = (braced ? inp.KeBr * top : inp.Ke * (top + dfix)) * 12;
-                    const sr = le / sp.deq;
+                    const sr = le / spC.deq;
                     const FcE = 0.822 * EminP / (sr * sr);
                     const al = FcE / FcStar;
                     const Cp = (1 + al) / (2 * tim.c) - Math.sqrt(Math.pow((1 + al) / (2 * tim.c), 2) - al / tim.c);
@@ -657,7 +702,7 @@
                 const Qa_c = (Qs_c + Qb) / inp.FSc, Qa_t = Qs_t / inp.FSt;
                 const T = Pc < 0 ? -Pc : 0;
                 return {
-                    id: c.id, name: c.name, CD: c.CD, P, Wp, Pc, H: br.H, M0: br.M0, e: br.e, Mmax: br.Mmax, f: br.f,
+                    id: c.id, name: c.name, CD: c.CD, dScour, P, Wp, Pc, H: br.H, M0: br.M0, e: br.e, Mmax: br.Mmax, f: br.f,
                     Rtop: br.Rtop, Wtop: br.Wtop, Lreq: br.Lreq, tipReq: br.Lreq + drop, Lav, drop,
                     st, Qs_c, Qb, Qa_c, Qs_t, Qa_t, T,
                     rStruct: st.ratio, rEmbed: Lav > 0 ? br.Lreq / Lav : (br.Lreq > 0 ? 99 : 0),
@@ -676,9 +721,171 @@
                 rows.forEach(r => { if (r[k] > best[k]) best = r; });
                 gov[k] = { ratio: best[k], id: best.id, name: best.name };
             });
-            return { sp, Kp, delta, api, Nq, gp, flood, tim, dfix, rows, gov,
+            return { sp, taper, Kp, delta, api, Nq, gp, flood, tim, dfix, rows, gov,
                      tipUsed: isNaN(inp.Ltip) ? tipDesign : inp.Ltip, tipGiven: !isNaN(inp.Ltip),
                      tipReqMax: Math.max.apply(null, rows.map(r => r.tipReq)), comps };
+        }
+
+        // ===================== AUTO-EMBEDMENT SOLVER =====================
+        // Every check that is evaluated at a given tip depth. ratio ≤ 1.0 = pass.
+        const EMBED_CHECKS = [
+            { k: 'rEmbed', lbl: 'Lateral embedment (Broms)' },
+            { k: 'rStruct', lbl: 'Structural: combined axial + bending (NDS 3.9.2 / ASD)' },
+            { k: 'rComp', lbl: 'Axial compression capacity (skin + tip, FS)' },
+            { k: 'rUplift', lbl: 'Uplift / pullout (skin + pile weight, FS)' },
+            { k: 'slender', lbl: 'Column slenderness le/d ≤ 50 (NDS 3.7.1.4)' }
+        ];
+        // Collect the governing ratio of each check from a pileDesign() result
+        function checkRatios(res) {
+            const out = {};
+            ['rStruct', 'rEmbed', 'rComp', 'rUplift'].forEach(k => { out[k] = res.gov[k]; });
+            let best = { ratio: 0, id: '–', name: res.tim ? '' : 'n/a (concrete)' };
+            if (res.tim) res.rows.forEach(r => { const q = (r.st.sr || 0) / 50; if (q > best.ratio) best = { ratio: q, id: r.id, name: r.name }; });
+            out.slender = best;
+            return out;
+        }
+        function failingChecks(ch) { return EMBED_CHECKS.filter(c => !(ch[c.k].ratio <= 1.0)).map(c => c.k); }
+        function checkLabel(k) { const c = EMBED_CHECKS.find(x => x.k === k); return c ? c.lbl : k; }
+
+        // Minimum tip depth below LAG (step-wise scan) at which EVERY check passes.
+        // Returns { ok, tip, total, res, checks, controls[], maxCheck } ; ok=false if nothing passes up to maxEmbed.
+        function solveEmbedment(inp) {
+            const step = inp.embStep > 0 ? inp.embStep : 0.5;
+            const tmin = Math.max(0.5, isNaN(inp.minEmbed) ? 5 : inp.minEmbed);
+            const tmax = Math.max(tmin, isNaN(inp.maxEmbed) ? 80 : inp.maxEmbed);
+            let prevFail = null, last = null, iters = 0;
+            for (let i = 0; ; i++) {
+                const t = Math.round((tmin + i * step) * 100) / 100;
+                if (t > tmax + 1e-9) break;
+                iters++;
+                const res = pileDesign(Object.assign({}, inp, { Ltip: t }));
+                const ch = checkRatios(res), fail = failingChecks(ch);
+                last = { t, res, ch, fail };
+                if (!fail.length) {
+                    return { ok: true, tip: t, total: t + inp.h, res, checks: ch, iters, step,
+                             controls: prevFail || ['minEmbed'], maxCheck: maxCheck(ch) };
+                }
+                // slenderness (le = f(h, scour, fixity)) does not improve with depth — stop early
+                if (fail.indexOf('slender') >= 0) break;   // le does not depend on embedment
+                prevFail = fail;
+            }
+            return { ok: false, tip: last.t, total: last.t + inp.h, res: last.res, checks: last.ch, iters, step,
+                     controls: last.fail, maxCheck: maxCheck(last.ch) };
+        }
+        function maxCheck(ch) { let b = null; EMBED_CHECKS.forEach(c => { if (!b || ch[c.k].ratio > ch[b].ratio) b = c.k; }); return b; }
+
+        // Overall status vs. the total-length target
+        function lengthStatus(sol, inp) {
+            const target = isNaN(inp.maxLen) || inp.maxLen <= 0 ? Infinity : inp.maxLen;
+            if (!sol.ok) return { cls: 'fail', text: 'FAIL — ' + checkLabel(sol.maxCheck) + (inp.embedMode === 'manual' ? ' at ' + f2(sol.tip, 1) + ' ft tip' : ' not satisfied by ' + f2(sol.tip, 1) + ' ft (search limit)'), over: false };
+            if (sol.total > target + 1e-9) {
+                return inp.lenMode === 'hard'
+                    ? { cls: 'fail', text: 'FAIL — length: ' + f2(sol.total, 1) + ' ft exceeds ' + target + ' ft limit', over: true }
+                    : { cls: 'amber', text: 'PASS — exceeds ' + target + ' ft target (' + f2(sol.total, 1) + ' ft)', over: true };
+            }
+            return { cls: 'ok', text: 'PASS — ' + f2(sol.total, 1) + ' ft total (≤ ' + target + ' ft target)', over: false };
+        }
+
+        // Re-run the solver on candidate changes that could shorten the pile
+        function embedAlternatives(inp, sol0) {
+            const alts = [];
+            const i0 = Object.assign({}, inp, { embedMode: 'auto' });
+            const st0 = lengthStatus(sol0 && inp.embedMode !== 'manual' ? sol0 : solveEmbedment(i0), i0);
+            const add = (label, change, mod) => {
+                const i2 = Object.assign({}, inp, mod, { embedMode: 'auto' });
+                const s = solveEmbedment(i2);
+                alts.push({ label, change, sol: s, st: lengthStatus(s, i2) });
+            };
+            const shapeWord = sh => sh === 'square' ? 'square' : 'round';
+            add('Next size up', `${inp.d + 2}" ${shapeWord(inp.shape)}`, { d: inp.d + 2 });
+            add('Two sizes up', `${inp.d + 4}" ${shapeWord(inp.shape)}`, { d: inp.d + 4 });
+            if (inp.pileType === 'timber') {
+                if (inp.shape === 'square') add('Round alternate, same size', `${inp.d}" round ${inp.species === 'DF' ? 'DF' : 'SP'} pile, uniform`, { shape: 'round', dTip: NaN });
+                else add('Square alternate, same size', `${inp.d}x${inp.d} sawn ${inp.sawnGrade}`, { shape: 'square', dTip: NaN });
+            }
+            if (inp.topCond !== 'braced') add('Brace pile top at floor framing', 'top condition = braced/pinned', { topCond: 'braced' });
+            // Soil: the strength needed to meet the target (confirm with a boring before relying on it)
+            const target = isNaN(inp.maxLen) || inp.maxLen <= 0 ? Infinity : inp.maxLen;
+            if (st0.cls === 'ok') {
+                // already under the target — no soil change needed
+            } else if (inp.soilType === 'clay') {
+                // bisection on a strength multiplier k (0.1 resolution, 1.1–3.0) applied to su at grade and su gradient
+                const modK = k => ({ suTop: Math.round(inp.suTop * k), suGrad: Math.round(inp.suGrad * k * 10) / 10, suMax: Math.max(inp.suMax, Math.round(inp.suTop * k)) });
+                const tryK = k => { const s = solveEmbedment(Object.assign({}, inp, modK(k))); return (s.ok && s.total <= target) ? s : null; };
+                let found = null, lo = 10, hi = 30, sHi = tryK(3.0);   // k in tenths
+                if (sHi) {
+                    while (hi - lo > 1) { const mid = Math.floor((lo + hi) / 2); const sm = tryK(mid / 10); if (sm) { hi = mid; sHi = sm; } else lo = mid; }
+                    found = { k: hi / 10, mod: modK(hi / 10), s: sHi };
+                }
+                if (found) alts.push({ label: 'Soil assumption needed', change: `su ≥ ${found.mod.suTop} psf + ${found.mod.suGrad} psf/ft (×${found.k.toFixed(1)}) — boring/UC or vane tests required`, sol: found.s, st: lengthStatus(found.s, inp) });
+                else alts.push({ label: 'Soil assumption needed', change: 'su ×3 still does not meet target', sol: null, st: null });
+            } else {
+                let found = null;
+                for (let dp = 1; dp <= 8 && !found; dp++) {
+                    const s = solveEmbedment(Object.assign({}, inp, { phi: inp.phi + dp }));
+                    if (s.ok && s.total <= target) found = { dp, s };
+                }
+                if (found) alts.push({ label: 'Soil assumption needed', change: `φ ≥ ${inp.phi + found.dp}° (+${found.dp}°) — confirm with SPT/CPT`, sol: found.s, st: lengthStatus(found.s, inp) });
+                else alts.push({ label: 'Soil assumption needed', change: 'φ +8° still does not meet target', sol: null, st: null });
+            }
+            return alts;
+        }
+
+        function renderEmbedPanel(inp, pack, opts) {
+            opts = opts || {};
+            const sol = pack.sol, st = pack.st;
+            const modeTxt = inp.embedMode === 'manual' ? 'Manual tip depth (checked as entered)' : `Auto-solved: scan ${f2(Math.max(0.5, inp.minEmbed), 1)}–${f2(inp.maxEmbed, 0)} ft in ${f2(sol.step || inp.embStep, 1)} ft steps; first depth where every check passes`;
+            const ctl = sol.controls[0] === 'minEmbed' ? 'Minimum embedment (' + f2(inp.minEmbed, 1) + ' ft) — no check controls'
+                        : sol.controls.map(checkLabel).join(' + ');
+            const pileTxt = `${inp.d}${inp.shape === 'square' ? 'x' + inp.d + '" square' : '" round'}${pack.sol.res.taper ? ' (butt; tip ' + inp.dTip + '")' : ''}, ${inp.topCond === 'braced' ? 'braced top' : 'free top'}, ${inp.soilType === 'clay' ? 'clay su ' + inp.suTop + ' + ' + inp.suGrad + ' psf/ft' : 'sand φ ' + inp.phi + '°'}`;
+            let h = `<h2>Embedment Solution${opts.title ? ' — ' + opts.title : ''}</h2>
+                <p><span class="badge ${st.cls}">${st.text}</span></p>
+                <table><tr><th>Item</th><th>Value</th></tr>
+                <tr><td style="text-align:left">Pile / case</td><td style="text-align:left">${pileTxt}</td></tr>
+                <tr><td style="text-align:left">Method</td><td style="text-align:left">${modeTxt}</td></tr>
+                <tr><td style="text-align:left">${inp.embedMode === 'manual' ? 'Tip depth checked' : 'Required embedment'} below LAG</td><td><strong>${f2(sol.tip, 1)} ft</strong>${!isNaN(inp.G) ? ' (tip elev. ' + f2(inp.G - sol.tip, 2) + ' ft)' : ''}</td></tr>
+                <tr><td style="text-align:left">Above-grade length h</td><td>${f2(inp.h, 1)} ft</td></tr>
+                <tr><td style="text-align:left">Total pile length (h + embedment)</td><td class="${st.cls}">${f2(sol.total, 1)} ft (target ${isNaN(inp.maxLen) ? '–' : inp.maxLen} ft)</td></tr>
+                <tr><td style="text-align:left">${sol.ok ? 'Check that controls the depth' : 'Governing (failing) check'}</td><td style="text-align:left">${sol.ok ? ctl : sol.controls.map(checkLabel).join(' + ')}</td></tr>
+                <tr><td style="text-align:left">Highest ratio at this depth</td><td>${f2(sol.checks[sol.maxCheck].ratio)} — ${checkLabel(sol.maxCheck)} (${sol.checks[sol.maxCheck].id})</td></tr>`;
+            if (pack.auto && inp.embedMode === 'manual') h += `<tr><td style="text-align:left">Auto-solver result (reference)</td><td>${pack.auto.ok ? f2(pack.auto.tip, 1) + ' ft embedment / ' + f2(pack.auto.total, 1) + ' ft total' : 'no passing depth ≤ ' + inp.maxEmbed + ' ft'}</td></tr>`;
+            h += `</table><h3>Checks at ${f2(sol.tip, 1)} ft</h3><table><tr><th>Check</th><th>Ratio</th><th>Governing combo</th><th>Result</th></tr>`;
+            EMBED_CHECKS.forEach(c => {
+                const g = sol.checks[c.k];
+                h += `<tr><td style="text-align:left">${c.lbl}</td><td class="${cls(g.ratio)}">${f2(g.ratio)}</td><td style="text-align:left">${g.id}${g.name ? ': ' + g.name : ''}</td><td>${g.ratio > 1 ? '❌ FAIL' : '✅ PASS'}</td></tr>`;
+            });
+            h += '</table><p style="font-size:0.85em">No pile-head deflection check exists in this tool yet (none is run). Lateral embedment uses Broms ultimate capacity with FS; serviceability deflection should be checked separately.</p>';
+            if (pack.alts && pack.alts.length) {
+                h += `<h3>${st.over || !sol.ok ? 'Options to get under the ' + inp.maxLen + ' ft target (solver re-run for each)' : 'Alternatives (solver re-run for each)'}</h3>
+                    <table><tr><th>Option</th><th>Change</th><th>Embedment (ft)</th><th>Total (ft)</th><th>Controls</th><th>Status</th></tr>`;
+                pack.alts.forEach(a => {
+                    if (!a.sol) { h += `<tr><td style="text-align:left">${a.label}</td><td style="text-align:left">${a.change}</td><td>–</td><td>–</td><td>–</td><td class="fail">no</td></tr>`; return; }
+                    const c = a.sol.ok ? (a.sol.controls[0] === 'minEmbed' ? 'min. embedment' : a.sol.controls.map(checkLabel).join(' + ')) : checkLabel(a.sol.maxCheck);
+                    h += `<tr><td style="text-align:left">${a.label}</td><td style="text-align:left">${a.change}</td><td>${a.sol.ok ? f2(a.sol.tip, 1) : '> ' + f2(a.sol.tip, 0)}</td><td>${a.sol.ok ? f2(a.sol.total, 1) : '–'}</td><td style="text-align:left">${c}</td><td class="${a.st.cls}">${a.st.text}</td></tr>`;
+                });
+                h += '</table>';
+            }
+            return h;
+        }
+
+        // Run the selected embedment mode and package everything the UI / calc sheet needs
+        function runEmbedment(inp) {
+            let sol, res, auto = null;
+            if (inp.embedMode === 'manual') {
+                res = pileDesign(inp);
+                const ch = checkRatios(res), fail = failingChecks(ch);
+                sol = { ok: !fail.length, tip: res.tipUsed, total: res.tipUsed + inp.h, res, checks: ch,
+                        controls: fail.length ? fail : [maxCheck(ch)], maxCheck: maxCheck(ch), step: inp.embStep };
+                auto = solveEmbedment(inp);
+                res.tipSource = res.tipGiven ? 'manual input' : 'lateral-only design (no manual depth entered)';
+            } else {
+                sol = solveEmbedment(inp);
+                res = sol.res;
+                res.tipSource = sol.ok ? 'auto-solved, all checks pass' : 'auto-solver max depth — checks FAIL';
+            }
+            const st = lengthStatus(sol, inp);
+            const alts = embedAlternatives(inp, sol);
+            return { sol, res, st, alts, auto };
         }
 
         function cls(r) { return r > 1.0 ? 'fail' : 'ok'; }
@@ -723,7 +930,7 @@
             let h = `<h2>Advanced Checks — ASCE 7-22 ASD Combinations</h2>
                 <p>Section ${inp.shape} ${inp.d}": A ${f2(res.sp.A, 1)} in², S ${f2(res.sp.S, 1)} in³, I ${f2(res.sp.I, 0)} in⁴, perimeter ${f2(res.sp.per, 1)} in.
                 ${t ? t.name + ': Fb ' + t.Fb + ', Fc ' + t.Fc + ', Emin ' + t.Emin + ' psi; CM(Fc) ' + t.CM_Fc + ', CF(Fb) ' + f2(t.CF_Fb, 3) + ', Ct ' + inp.Ct + ', Ke ' + inp.Ke + ', fixity ' + f2(res.dfix, 1) + ' ft.' : 'Concrete (preliminary ASD).'}
-                Soil: ${inp.soilType === 'clay' ? 'CLAY su ' + inp.suTop + ' psf + ' + inp.suGrad + ' psf/ft (cap ' + inp.suMax + '), α method, 9su end bearing, Broms clay; ' : ''}Kp ${f2(res.Kp)}, δ ${res.delta}°, Nq ${res.Nq}, f<sub>s,lim</sub> ${res.api.fslim} ksf, q<sub>lim</sub> ${res.api.qlim} ksf. Pile tip ${f2(res.tipUsed, 1)} ft below grade ${res.tipGiven ? '(input)' : '(= required, design mode)'}; max required tip ${f2(res.tipReqMax, 1)} ft.</p>`;
+                Soil: ${inp.soilType === 'clay' ? 'CLAY su ' + inp.suTop + ' psf + ' + inp.suGrad + ' psf/ft (cap ' + inp.suMax + '), α method, 9su end bearing, Broms clay; ' : ''}Kp ${f2(res.Kp)}, δ ${res.delta}°, Nq ${res.Nq}, f<sub>s,lim</sub> ${res.api.fslim} ksf, q<sub>lim</sub> ${res.api.qlim} ksf. Pile tip ${f2(res.tipUsed, 1)} ft below grade (${res.tipSource || (res.tipGiven ? 'input' : 'required, design mode')}); max required tip ${f2(res.tipReqMax, 1)} ft.</p>`;
             if (inp.topCond === 'braced') {
                 const mx = res.rows.reduce((a, r) => Math.max(a, (r.Rtop || 0) + (r.Wtop || 0)), 0);
                 h += `<p><strong>Top braced at floor framing:</strong> pile modeled as propped cantilever (pinned top, fixed ${f2(res.dfix, 1)} ft below scour line), le = ${inp.KeBr} × (scour line to framing). Lateral wind at the top and the flood prop reaction go to the floor diaphragm — max per-pile top reaction ${f2(mx)} k must be resisted by the building's lateral system (shear walls / knee braces / cross bracing). Embedment checked for V and M at the scour line (Broms equilibrium, FS ${inp.FSlat}).</p>`;
@@ -732,7 +939,7 @@
             h += govTable(res) + '<h3>Flood Loads</h3>' + floodTable(res.flood) + '<h3>All Combinations</h3>' + comboTable(res);
             return h;
         }
-        function renderCalcSheet(inp, res) {
+        function renderCalcSheet(inp, res, pack) {
             const now = new Date();
             const inRows = [
                 ['Pile', `${inp.pileType} ${inp.shape} ${inp.d}" ${res.tim ? '— ' + res.tim.name : "f'c " + inp.fc_prime + ' psi'}`],
@@ -743,7 +950,9 @@
                 ["Soil γ' / γm / φ / δ / dw", `${inp.gammaEff} pcf / ${inp.gammaM} pcf / ${inp.phi}° / ${res.delta}° / ${inp.dw} ft`],
                 ['K comp / K tension / Nq', `${inp.Kc} / ${inp.Kt} / ${res.Nq}`],
                 ['FS comp / uplift / lateral', `${inp.FSc} / ${inp.FSt} / ${inp.FSlat}`],
-                ['Pile tip below grade', `${f2(res.tipUsed, 1)} ft ${res.tipGiven ? '(input)' : '(design)'}`],
+                ['Pile tip below grade', `${f2(res.tipUsed, 1)} ft (${res.tipSource || (res.tipGiven ? 'input' : 'design')})`],
+                ['Round pile taper', res.taper ? `butt ${inp.d}" → tip ${inp.dTip}" (bending/lateral at scour-line diameter, skin by local perimeter, end bearing on tip area)` : 'uniform'],
+                ['Embedment mode / length target', `${inp.embedMode === 'manual' ? 'Manual' : 'Auto-solve'} (min ${inp.minEmbed} / max ${inp.maxEmbed} ft, step ${inp.embStep} ft) / ${inp.maxLen} ft ${inp.lenMode === 'hard' ? 'hard limit' : 'advisory'}`],
                 ['Pile top condition', inp.topCond === 'braced' ? `Braced/pinned at framing (Ke ${inp.KeBr}, le = scour line to framing); propped cantilever fixed ${f2(res.dfix, 1)} ft below scour line; wind to diaphragm` : 'Free top (cantilever)'],
                 ['Column stability Ke / fixity / Ct', `${inp.Ke} / ${f2(res.dfix, 1)} ft / ${inp.Ct}`],
                 ['Flood zone / BFE / grade', `${inp.zone} / ${f2(inp.BFE, 2)} / ${f2(inp.G, 2)} ft`]
@@ -751,6 +960,7 @@
             return `<h1 style="color:black">PRELIMINARY — Pile Design Calculation</h1>
                 <p><strong>Project:</strong> ${inp.projName || '(unnamed)'} &nbsp; <strong>Date:</strong> ${now.toLocaleDateString()} &nbsp; <strong>Status:</strong> PRELIMINARY — not for construction</p>
                 <h2>Inputs</h2><table><tr><th>Item</th><th>Value</th></tr>${inRows}</table>
+                ${pack ? renderEmbedPanel(inp, pack) : ''}
                 <h2>Governing Results</h2>${govTable(res)}
                 <h2>Flood Loads</h2>${floodTable(res.flood)}
                 <h2>Load Combinations</h2>${comboTable(res)}
