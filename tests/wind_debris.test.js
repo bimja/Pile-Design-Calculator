@@ -15,10 +15,12 @@ t('debris: FEMA P-55 Eq. 8.9, V zone CD 1.0, CStr 0.2 → 1000 × 11.9 × 0.2 = 
   const f = lib.pileDesign(Object.assign({}, base, { debrisOn: true, Ltip: 28.5 })).flood;
   near(f.Fdeb, 2.38, 0.01, 'Fdeb'); assert.strictEqual(f.CDd, 1.0); assert.strictEqual(f.CStr, 0.2);
 });
-t('debris is off by default (one critical pile) and its combos use CD 2.0', () => {
+t('debris is off by default (one critical pile); debris combos default to CD 1.6, 2.0 when entered', () => {
   assert.strictEqual(lib.pileDesign(Object.assign({}, base, { Ltip: 28.5 })).flood.debris, false);
   const r = lib.pileDesign(Object.assign({}, base, { debrisOn: true, Ltip: 28.5 }));
-  assert.ok(r.rows.filter(x => /dyn/.test(x.id)).every(x => x.CD === 2.0));
+  assert.ok(r.rows.filter(x => /dyn/.test(x.id)).every(x => x.CD === 1.6));
+  const r2 = lib.pileDesign(Object.assign({}, base, { debrisOn: true, impactCD: 2.0, Ltip: 28.5 }));
+  assert.ok(r2.rows.filter(x => /dyn/.test(x.id)).every(x => x.CD === 2.0));
   assert.ok(r.rows.filter(x => /brk/.test(x.id)).every(x => x.CD === 1.6));
 });
 t('interior 14x14 braced, base: 28.5 ft (compression), lateral-to-soil needs ≈14.3 ft (S-1)', () => {
@@ -46,7 +48,7 @@ t('NOT braced to grade: free cantilever fails in bending at every depth, clearly
   const s = lib.solveEmbedment(i);
   assert.ok(!s.ok); assert.ok(s.checks.rStruct.ratio > 1.0, String(s.checks.rStruct.ratio));
   const d = lib.solveEmbedment(Object.assign({}, i, { debrisOn: true }));
-  assert.ok(d.checks.rStruct.ratio > 1.25, 'debris pile ' + d.checks.rStruct.ratio);
+  assert.ok(d.checks.rStruct.ratio > 1.55, 'debris pile ' + d.checks.rStruct.ratio);   // ≈1.63 at default CD 1.6
   const html = lib.renderEmbedPanel(i, lib.runEmbedment(i));
   assert.ok(/UNBRACED PILE FAILS IN BENDING/.test(html));
 });

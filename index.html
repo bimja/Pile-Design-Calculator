@@ -237,7 +237,8 @@
                 <div><label>Debris weight W (lb)</label><input type="number" id="debrisW" value="1000" step="100"></div>
                 <div><label>Structure coeff. CStr (blank = 0.2 timber pile / 0.4 concrete pile, FEMA P-55)</label><input type="number" id="CStr" value="" step="0.05"></div>
                 <div><label>Blockage coeff. CB (1.0 no upstream screening)</label><input type="number" id="CB" value="1.0" step="0.1"></div>
-                <div><label>Load duration CD for debris combos (NDS impact 2.0)</label><input type="number" id="impactCD" value="2.0" step="0.1"></div>
+                <div><label>Load duration CD for debris combos (default 1.6; editable)</label><input type="number" id="impactCD" value="1.6" step="0.1">
+                    <div style="font-size:0.8em;color:#555">NDS Table 2.3.2: the impact factor CD = 2.0 is not permitted for members pressure-treated with waterborne preservatives to marine (heavy) retentions, which is typical for coastal timber piles. Use 2.0 only for untreated or other qualifying piles.</div></div>
             </div>
         </details>
         
@@ -430,7 +431,7 @@
                 fc_prime: numVal('fc_prime', 5000), d: numVal('d_trial', 12),
                 D: numVal('Dld', 0), L: numVal('Lld', 0), Lr: numVal('Lrld', 0), Wv: numVal('Wvld', 0), Wh: numVal('Whld', 0),
                 Wot: numVal('Wot', 0), qzPile: numVal('qzPile', 0), CfPile: numVal('CfPile', NaN), braceFoot: numVal('braceFoot', 1),
-                CStr: numVal('CStr', NaN), CB: numVal('CB', 1.0), impactCD: numVal('impactCD', 2.0), bw: lastBW,
+                CStr: numVal('CStr', NaN), CB: numVal('CB', 1.0), impactCD: numVal('impactCD', 1.6), bw: lastBW,
                 pileUnitWt: numVal('pileUnitWt', NaN),
                 Ltip: numVal('Ltip', NaN), dw: numVal('dw', 0), gammaM: numVal('gammaM', 110), delta: numVal('delta', NaN),
                 Kc: numVal('Kc', 1.0), Kt: numVal('Kt', 0.8), FSc: numVal('FSc', 2.5), FSt: numVal('FSt', 3.0), FSlat: numVal('FSlat', 2.0),
@@ -734,7 +735,7 @@
                         [['5', 'D + 0.6W', 1, 0, 0, 0.6], ['6', 'D + 0.75L + 0.75(0.6W) + 0.75Lr', 1, 0.75, 0.75, 0.45],
                          ['7', '0.6D + 0.6W', 0.6, 0, 0, 0.6]].forEach(c => {
                             combos.push({ id: c[0] + 'F-' + s.key, name: c[1] + ' + ' + ks + ' (' + s.name + ')',
-                                          fD: c[2], fL: c[3], fLr: c[4], fW: c[5], CD: s.debris ? (isFinite(inp.impactCD) ? inp.impactCD : 2.0) : 1.6, flood: s, kf: k });
+                                          fD: c[2], fL: c[3], fLr: c[4], fW: c[5], CD: s.debris ? (isFinite(inp.impactCD) ? inp.impactCD : 1.6) : 1.6, flood: s, kf: k });
                         });
                     });
                 }
@@ -1044,7 +1045,7 @@
                 <tr><td>Flood velocity V</td><td>${f2(fl.V, 1)} ft/s</td></tr>
                 <tr><td>Breaking wave FD = 0.5 γw CD D Hb² (CD ${fl.CDb}, D ${f2(fl.Dw)} ft) @ Esw</td><td>${f2(fl.Fbrk)} kips</td></tr>
                 <tr><td>Hydrodynamic F = 0.5 a ρ V² A (a ${fl.a}) @ ds/2</td><td>${f2(fl.Fdyn)} kips</td></tr>
-                <tr><td>Debris impact, FEMA P-55 Eq. 8.9: Fi = W V CD CB CStr (CD ${f2(fl.CDd)}${fl.CDd === 1 ? ' V zone' : ''}, CB ${f2(fl.CB)}, CStr ${f2(fl.CStr)} ≡ π CI CO Rmax/(2gΔt) with CI ${fl.CI}, CO ${fl.CO}, Δt ${fl.dt} s, Rmax ${f2(fl.Rmax, 3)}) @ Esw — ${fl.debris ? 'this pile takes debris impact; NDS CD = impact factor in the debris combos' : 'not applied (this pile not selected as the debris-struck pile)'}</td><td>${f2(fl.debris ? fl.Fdeb : 0)} kips</td></tr>
+                <tr><td>Debris impact, FEMA P-55 Eq. 8.9: Fi = W V CD CB CStr (CD ${f2(fl.CDd)}${fl.CDd === 1 ? ' V zone' : ''}, CB ${f2(fl.CB)}, CStr ${f2(fl.CStr)} ≡ π CI CO Rmax/(2gΔt) with CI ${fl.CI}, CO ${fl.CO}, Δt ${fl.dt} s, Rmax ${f2(fl.Rmax, 3)}) @ Esw — ${fl.debris ? 'this pile takes debris impact; debris combos use the entered CD (default 1.6)' : 'not applied (this pile not selected as the debris-struck pile)'}</td><td>${f2(fl.debris ? fl.Fdeb : 0)} kips</td></tr>
                 <tr><td>Local scour + general erosion (applied to flood combos)</td><td>${f2(fl.local)} + ${f2(fl.S - fl.local)} = ${f2(fl.S)} ft</td></tr>
                 <tr><td>Fa factor (ASCE 7-22 §2.4.2)</td><td>${fl.kf}</td></tr></table>`;
         }
@@ -1072,7 +1073,7 @@
                 ['Loads D / L / Lr / Wv / Wh / Wot (nominal; W strength)', [inp.D, inp.L, inp.Lr, inp.Wv, inp.Wh, inp.Wot || 0].join(' / ') + ' kips'],
                 ['Wind on exposed pile', res.pw && res.pw.q > 0 ? `qz ${f2(res.pw.q, 1)} psf (incl. Kd), G 0.85, Cf ${res.pw.Cf}, exposed ${f2(res.pw.Hexp, 1)} ft from ${res.bracedG ? 'brace foot' : 'grade'} → ${f2(res.pw.F)} k strength` : 'not entered'],
                 ['Building wind helper', inp.bw ? bwSummary(inp.bw) : 'not used (Wh / Wot entered manually)'],
-                ['Debris impact', inp.debrisOn ? `This pile takes debris: W ${inp.debrisW} lb, CB ${isFinite(inp.CB) ? inp.CB : 1}, CStr ${res.flood ? f2(res.flood.CStr) : '–'} (FEMA P-55 Eq. 8.9); NDS CD ${isFinite(inp.impactCD) ? inp.impactCD : 2.0} (impact) in the debris combos` : 'Not applied to this pile (debris goes on one critical pile)'],
+                ['Debris impact', inp.debrisOn ? `This pile takes debris: W ${inp.debrisW} lb, CB ${isFinite(inp.CB) ? inp.CB : 1}, CStr ${res.flood ? f2(res.flood.CStr) : '–'} (FEMA P-55 Eq. 8.9); NDS CD ${isFinite(inp.impactCD) ? inp.impactCD : 1.6} in the debris combos` : 'Not applied to this pile (debris goes on one critical pile)'],
                 ['User P / Hx / Hy (single case)', [inp.P, inp.Hx, inp.Hy].join(' / ') + ' kips'],
                 ['Soil type', inp.soilType === 'clay' ? `Clay: su ${inp.suTop} psf + ${inp.suGrad} psf/ft, cap ${inp.suMax} psf (α method, 9su, Broms clay)` : 'Sand (β method, Nq, Broms sand)'],
                 ["Soil γ' / γm / φ / δ / dw", `${inp.gammaEff} pcf / ${inp.gammaM} pcf / ${inp.phi}° / ${res.delta}° / ${inp.dw} ft`],
