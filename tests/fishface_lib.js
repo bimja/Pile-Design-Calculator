@@ -2,7 +2,7 @@
 const fs = require('fs'), path = require('path');
 const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
 const js = html.match(/<script>([\s\S]*?)<\/script>/)[1].replace(/window\.onload[\s\S]*?};/, '');
-const lib = new Function('document', js + '; return { pileDesign, readInputs, solveEmbedment, lengthStatus, embedAlternatives, runEmbedment, checkRatios, renderEmbedPanel, renderCalcSheet };')({ getElementById: () => null });
+const lib = new Function('document', js + '; return { buildingWind, pileDesign, readInputs, solveEmbedment, lengthStatus, embedAlternatives, runEmbedment, checkRatios, renderEmbedPanel, renderCalcSheet };')({ getElementById: () => null });
 // Memo 2026-07-013_soil_pile_memo.md: Surfside clay (CH), water at grade, VE, BFE 13 NAVD88, LAG 6.20,
 // braced top (Ke 1.0), debris on, local scour 2D, FS 2.5 / 3.0 / 2.0. Base profile su = 400 + 15 psf/ft (cap 1,500).
 const fishFace = {
