@@ -18,3 +18,11 @@ assert(Math.abs(b.qh / a.qh - (160 / 143) ** 2) < 1e-6, 'qh ~ V^2');
 assert(Math.abs(b.share / a.share - (160 / 143) ** 2) < 1e-6, 'Wh ~ V^2');
 assert(/id="wind" value="143"[^>]*onchange/.test(html) && !/id="wind"[^>]*disabled/.test(html), 'wind input enabled');
 console.log('species_wind tests passed; Wh 143 mph', a.share.toFixed(2), 'k -> 160 mph', b.share.toFixed(2), 'k');
+// TPC Timber Pile Design & Construction Manual 2016: Table 3-1 (p.9), Table 3-10 (p.17), Eq. 3-5
+const t = (o) => lib.timberRef(Object.assign({ shape: 'round', species: 'SP', d: 12 }, o));
+assert.deepStrictEqual([t({ roundBasis: 'TPC' }).Fc, t({ roundBasis: 'TPC' }).Fb], [1250, 1950]);
+assert.deepStrictEqual([t({ species: 'RP' }).Fc, t({ species: 'RP' }).Fb, t({ species: 'RP' }).E], [850, 1350, 1300000]);
+assert.strictEqual(t({ conditioning: 'air' }).Cu_Fc, 1.18); assert.strictEqual(t({ species: 'DF', conditioning: 'air' }).Cu_Fb, 1.11);
+assert.deepStrictEqual([t({ loadShare: 'single' }).Cls_Fc, t({ loadShare: 'single' }).Cls_Fb], [0.8, 0.77]);
+assert.strictEqual(t({}).Cu_Fc * t({}).Cls_Fc, 1, 'defaults unchanged');
+console.log('TPC manual tests passed');

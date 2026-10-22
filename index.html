@@ -97,6 +97,24 @@
             <select id="species">
                 <option value="SP" selected>Southern Pine (Fc=1200 psi, Fb=2400 psi)</option>
                 <option value="DF">Douglas Fir (Fc=1250 psi, Fb=2450 psi)</option>
+                <option value="RO">Red Oak (TPC Manual Table 3-1: Fc 1100, Fb 2450)</option>
+                <option value="RP">Red Pine (TPC Manual Table 3-1: Fc 850, Fb 1350)</option>
+                <option value="LP">Lodgepole Pine (TPC Manual Table 3-1: Fc 1150, Fb 1700)</option>
+            </select>
+            <label>Round pile design value basis</label>
+            <select id="roundBasis">
+                <option value="NDS" selected>NDS Supplement Table 6A (SP / DF; others fall back to TPC Table 3-1)</option>
+                <option value="TPC">Timber Pile Design &amp; Construction Manual 2016, Table 3-1 + Table 3-10 / Eq. 3-5</option>
+            </select>
+            <label>Conditioning before treatment (Cu, TPC Manual Table 3-10 / NDS 6.3.5)</label>
+            <select id="conditioning">
+                <option value="steam" selected>Steam-conditioned or Boultonized (Cu = 1.0)</option>
+                <option value="air">Air- or kiln-dried before treatment / untreated (Cu = 1.18 SP, 1.11 DF, 1.0 others)</option>
+            </select>
+            <label>Load sharing Cls (TPC Manual Table 3-10)</label>
+            <select id="loadShare">
+                <option value="cluster" selected>Pile cluster / group (Cls = 1.0)</option>
+                <option value="single">Single pile (Cls = 0.80 Fc, 0.77 Fb)</option>
             </select>
             <label>Round pile tip diameter (in; blank = uniform/prismatic, size d above = butt)</label>
             <input type="number" id="dTip" value="" step="0.5">
@@ -347,9 +365,9 @@
             
             if (pileType === 'timber') {
                 // same reference values as the main solver: square = sawn timber grade (Table 4D), round = pile species (Table 6A)
-                const tr = timberRef({ shape: shape, sawnGrade: strVal('sawnGrade', 'SP_1'), species: strVal('species', 'SP'), d: d_trial });
-                Fc = tr.Fc * tr.CM_Fc;            // psi (CD, CP not applied in this legacy quick check)
-                Fb = tr.Fb * tr.CM_Fb * tr.CF_Fb; // psi
+                const tr = timberRef({ shape: shape, sawnGrade: strVal('sawnGrade', 'SP_1'), species: strVal('species', 'SP'), roundBasis: strVal('roundBasis', 'NDS'), conditioning: strVal('conditioning', 'steam'), loadShare: strVal('loadShare', 'cluster'), d: d_trial });
+                Fc = tr.Fc * tr.CM_Fc * (tr.Cu_Fc || 1) * (tr.Cls_Fc || 1);            // psi (CD, CP not applied in this legacy quick check)
+                Fb = tr.Fb * tr.CM_Fb * tr.CF_Fb * (tr.Cu_Fb || 1) * (tr.Cls_Fb || 1); // psi
                 materialName = tr.name;
             } else {
                 // Concrete
@@ -450,7 +468,7 @@
                 P: numVal('P', 0), Hx: numVal('Hx', 0), Hy: numVal('Hy', 0), h: numVal('h', 0),
                 gammaEff: numVal('gamma', 55), phi: numVal('phi', 30),
                 pileType: pileType, shape: strVal('shape', 'square') === 'square' ? 'square' : 'round',
-                species: strVal('species', 'SP'), sawnGrade: strVal('sawnGrade', 'SP_1'),
+                species: strVal('species', 'SP'), sawnGrade: strVal('sawnGrade', 'SP_1'), roundBasis: strVal('roundBasis', 'NDS'), conditioning: strVal('conditioning', 'steam'), loadShare: strVal('loadShare', 'cluster'),
                 fc_prime: numVal('fc_prime', 5000), d: numVal('d_trial', 12),
                 D: numVal('Dld', 0), L: numVal('Lld', 0), Lr: numVal('Lrld', 0), Wv: numVal('Wvld', 0), Wh: numVal('Whld', 0),
                 Wot: numVal('Wot', 0), qzPile: numVal('qzPile', 0), CfPile: numVal('CfPile', NaN), braceFoot: numVal('braceFoot', 1),
@@ -576,11 +594,23 @@
                          CF_Fb: d > 12 ? Math.pow(12 / d, 1 / 9) : 1.0,  // size factor, Table 4D
                          c: 0.8 };
             }
-            const sp = inp.species === 'DF';
-            return { name: (sp ? 'Douglas Fir' : 'Southern Pine') + ' round timber pile (NDS Table 6A)',
-                     Fb: sp ? 2450 : 2400, Fc: sp ? 1250 : 1200, Emin: 790000, E: 1500000,
+            // NDS Supplement Table 6A (treated round piles) vs Timber Pile Design & Construction Manual (TPC 2016) Table 3-1, p.9
+            const NDS6A = { SP: ['Southern Pine', 1200, 2400, 1500000, 790000], DF: ['Pacific Coast Douglas Fir', 1250, 2450, 1500000, 790000] };
+            const TPC31 = { SP: ['Southern Pine', 1250, 1950, 1500000], DF: ['Douglas Fir', 1300, 2050, 1500000], LP: ['Lodgepole Pine', 1150, 1700, 1000000],
+                            RO: ['Red Oak', 1100, 2450, 1250000], RP: ['Red Pine', 850, 1350, 1300000] };
+            const spc = TPC31[inp.species] ? inp.species : 'SP';
+            const useTPC = inp.roundBasis === 'TPC' || !NDS6A[spc];
+            let nm, Fc, Fb, E, Emin;
+            if (useTPC) { const t = TPC31[spc]; nm = t[0] + ' round timber pile (TPC Manual Table 3-1)'; Fc = t[1]; Fb = t[2]; E = t[3];
+                          Emin = Math.round(E * 790000 / 1500000); }   // manual gives no Emin: NDS 6A Emin/E ratio (0.527) assumed
+            else { const t = NDS6A[spc]; nm = t[0] + ' round timber pile (NDS Table 6A)'; Fc = t[1]; Fb = t[2]; E = t[3]; Emin = t[4]; }
+            const Cu = inp.conditioning === 'air' ? (spc === 'SP' ? 1.18 : spc === 'DF' ? 1.11 : 1.0) : 1.0;   // TPC Table 3-10, NDS 6.3.5
+            const single = inp.loadShare === 'single';
+            return { name: nm, Fb, Fc, Emin, E,
                      CM_Fb: 1.0, CM_Fc: 1.0, CM_E: 1.0,                  // pile values already wet service
-                     CF_Fb: d > 13.5 ? Math.pow(13.5 / d, 1 / 9) : 1.0,  // NDS 6.3.7
+                     // size factor: NDS 6.3.8 (13.5/d)^(1/9); TPC Eq. 3-5 (p.16-17) (12/d)^(1/9), both only for d > 13.5"
+                     CF_Fb: d > 13.5 ? Math.pow((useTPC ? 12 : 13.5) / d, 1 / 9) : 1.0,
+                     Cu_Fc: Cu, Cu_Fb: Cu, Cls_Fc: single ? 0.80 : 1.0, Cls_Fb: single ? 0.77 : 1.0,
                      c: 0.85 };
         }
 
@@ -657,7 +687,8 @@
             const sway = inp.topCond === 'sway';
             const alpha = sway ? Math.min(1, Math.max(0, isFinite(inp.topFix) ? inp.topFix : 0.5)) : 0;
             const KeFix = isFinite(inp.KeFix) ? inp.KeFix : 1.2;
-            const Esw = tim ? tim.E * inp.Ct : 57000 * Math.sqrt(inp.fc_prime || 5000);
+            const CtE = inp.Ct >= 1 ? 1.0 : 0.9;   // TPC Manual Table 3-10 / NDS Table 2.3.3: E takes 0.9 at 100-150°F, not the strength Ct
+            const Esw = tim ? tim.E * CtE : 57000 * Math.sqrt(inp.fc_prime || 5000);
             const driftN = isFinite(inp.driftN) && inp.driftN > 0 ? inp.driftN : 100;
             // Top connection moment capacity: bolts in one vertical line per beam end, M = Z' Σr²/r_max per end × ends
             const conn = (() => {
@@ -903,8 +934,8 @@
                 const fb = br.Mmax * 12000 / spC.S;
                 if (tim) {
                     const CD = c.CD;
-                    const FcStar = tim.Fc * CD * tim.CM_Fc * inp.Ct;
-                    const EminP = tim.Emin * tim.CM_E * inp.Ct;
+                    const FcStar = tim.Fc * CD * tim.CM_Fc * inp.Ct * (tim.Cu_Fc || 1) * (tim.Cls_Fc || 1);
+                    const EminP = tim.Emin * tim.CM_E * CtE;
                     const Kef = braced ? inp.KeBr : (sway ? inp.Ke - aL * (inp.Ke - KeFix) : inp.Ke);
                     const le = (braced ? inp.KeBr * top : Kef * (top + dfix)) * 12;
                     const sr = le / spC.deq;
@@ -912,7 +943,7 @@
                     const al = FcE / FcStar;
                     const Cp = (1 + al) / (2 * tim.c) - Math.sqrt(Math.pow((1 + al) / (2 * tim.c), 2) - al / tim.c);
                     const FcP = FcStar * Cp;
-                    const FbP = tim.Fb * CD * tim.CM_Fb * inp.Ct * tim.CF_Fb;
+                    const FbP = tim.Fb * CD * tim.CM_Fb * inp.Ct * tim.CF_Fb * (tim.Cu_Fb || 1) * (tim.Cls_Fb || 1);
                     const ratio = fc >= FcE ? 99 : Math.pow(fc / FcP, 2) + fb / (FbP * (1 - fc / FcE));
                     st = { fc, fb, FcP, FbP, FcE, Cp, sr, ratio, slenderOK: sr <= 50, Kef, le: le / 12 };
                 } else {
@@ -1237,7 +1268,7 @@
             const t = res.tim;
             let h = `<h2>Advanced Checks — ASCE 7-22 ASD Combinations</h2>
                 <p>Section ${inp.shape} ${inp.d}": A ${f2(res.sp.A, 1)} in², S ${f2(res.sp.S, 1)} in³, I ${f2(res.sp.I, 0)} in⁴, perimeter ${f2(res.sp.per, 1)} in.
-                ${t ? t.name + ': Fb ' + t.Fb + ', Fc ' + t.Fc + ', Emin ' + t.Emin + ' psi; CM(Fc) ' + t.CM_Fc + ', CF(Fb) ' + f2(t.CF_Fb, 3) + ', Ct ' + inp.Ct + ', Ke ' + inp.Ke + ', fixity ' + f2(res.dfix, 1) + ' ft.' : 'Concrete (preliminary ASD).'}
+                ${t ? t.name + ': Fb ' + t.Fb + ', Fc ' + t.Fc + ', Emin ' + t.Emin + ' psi; CM(Fc) ' + t.CM_Fc + ', CF(Fb) ' + f2(t.CF_Fb, 3) + (t.Cu_Fc ? ', Cu ' + t.Cu_Fc + ', Cls ' + t.Cls_Fc + '/' + t.Cls_Fb : '') + ', Ct ' + inp.Ct + ', Ke ' + inp.Ke + ', fixity ' + f2(res.dfix, 1) + ' ft.' : 'Concrete (preliminary ASD).'}
                 Soil: ${inp.soilType === 'clay' ? 'CLAY su ' + inp.suTop + ' psf + ' + inp.suGrad + ' psf/ft (cap ' + inp.suMax + '), α method, 9su end bearing, Broms clay; ' : ''}Kp ${f2(res.Kp)}, δ ${res.delta}°, Nq ${res.Nq}, f<sub>s,lim</sub> ${res.api.fslim} ksf, q<sub>lim</sub> ${res.api.qlim} ksf. Pile tip ${f2(res.tipUsed, 1)} ft below grade (${res.tipSource || (res.tipGiven ? 'input' : 'required, design mode')}); max required tip ${f2(res.tipReqMax, 1)} ft.</p>`;
             if (inp.topCond === 'braced') {
                 const mx = res.rows.reduce((a, r) => Math.max(a, (r.Rtop || 0) + (r.Wtop || 0)), 0);
