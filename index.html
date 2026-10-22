@@ -63,8 +63,8 @@
         <label>Height Above Grade h (ft)</label>
         <input type="number" id="h" value="12" step="0.1">
         
-        <label>Basic Wind Speed (mph) — reference only (Galveston area typical 140-150 mph)</label>
-        <input type="number" id="wind" value="150" disabled>
+        <label>Basic Wind Speed V (mph, ASCE 7-22 Fig. 26.5-1; Galveston area typical 140-150 mph) — drives the Building Wind Helper (Wh, Wot, pile qz)</label>
+        <input type="number" id="wind" value="143" step="1" onchange="windChanged('wind')">
         
         <h2>Soil Parameters (Galveston TX Coast Defaults — Sandy Soil)</h2>
         <label>Effective (submerged) Unit Weight γ' (pcf)</label>
@@ -97,6 +97,24 @@
             <select id="species">
                 <option value="SP" selected>Southern Pine (Fc=1200 psi, Fb=2400 psi)</option>
                 <option value="DF">Douglas Fir (Fc=1250 psi, Fb=2450 psi)</option>
+                <option value="RO">Red Oak (TPC Manual Table 3-1: Fc 1100, Fb 2450)</option>
+                <option value="RP">Red Pine (TPC Manual Table 3-1: Fc 850, Fb 1350)</option>
+                <option value="LP">Lodgepole Pine (TPC Manual Table 3-1: Fc 1150, Fb 1700)</option>
+            </select>
+            <label>Round pile design value basis</label>
+            <select id="roundBasis">
+                <option value="NDS" selected>NDS Supplement Table 6A (SP / DF; others fall back to TPC Table 3-1)</option>
+                <option value="TPC">Timber Pile Design &amp; Construction Manual 2016, Table 3-1 + Table 3-10 / Eq. 3-5</option>
+            </select>
+            <label>Conditioning before treatment (Cu, TPC Manual Table 3-10 / NDS 6.3.5)</label>
+            <select id="conditioning">
+                <option value="steam" selected>Steam-conditioned or Boultonized (Cu = 1.0)</option>
+                <option value="air">Air- or kiln-dried before treatment / untreated (Cu = 1.18 SP, 1.11 DF, 1.0 others)</option>
+            </select>
+            <label>Load sharing Cls (TPC Manual Table 3-10)</label>
+            <select id="loadShare">
+                <option value="cluster" selected>Pile cluster / group (Cls = 1.0)</option>
+                <option value="single">Single pile (Cls = 0.80 Fc, 0.77 Fb)</option>
             </select>
             <label>Round pile tip diameter (in; blank = uniform/prismatic, size d above = butt)</label>
             <input type="number" id="dTip" value="" step="0.5">
@@ -164,7 +182,7 @@
             <h3>Building Wind Helper (optional) — fills Wh, Wot and pile qz</h3>
             <p style="font-size:0.85em;">ASCE 7-22 directional procedure (Ch. 27), G 0.85, windward wall Cp 0.8 with q<sub>z</sub>, leeward wall Cp by L/B, roof Cp (Fig. 27.3-1, wind normal to ridge). Wind normal to the B face; piles in rows (along wind) × lines (across wind).</p>
             <div class="grid2">
-                <div><label>Basic wind speed V (mph)</label><input type="number" id="bwV" value="143" step="1"></div>
+                <div><label>Basic wind speed V (mph)</label><input type="number" id="bwV" value="143" step="1" onchange="windChanged('bwV')"></div>
                 <div><label>Exposure</label><select id="bwExp"><option value="B">B</option><option value="C" selected>C</option><option value="D">D</option></select></div>
                 <div><label>Mean roof height above grade h (ft)</label><input type="number" id="bwh" value="41" step="0.5"></div>
                 <div><label>Bottom of floor framing above grade hB (ft)</label><input type="number" id="bwhB" value="10" step="0.5"></div>
@@ -199,7 +217,8 @@
                 <div><label>Lateral earth pressure coeff. K, tension</label><input type="number" id="Kt" value="0.8" step="0.05"></div>
                 <div><label>FS axial compression</label><input type="number" id="FSc" value="2.5" step="0.1"></div>
                 <div><label>FS uplift (2.0–3.0)</label><input type="number" id="FSt" value="3.0" step="0.1" min="2" max="3"></div>
-                <div><label>FS lateral (Broms)</label><input type="number" id="FSlat" value="2.0" step="0.1"></div>
+                <div><label>FS lateral (Broms; TPC Manual §7.2 Step 10: Qm = Qu/2.5)</label><input type="number" id="FSlat" value="2.5" step="0.1"></div>
+                <div><label>Long-pile yield moment My (Broms Figs 7-2 / 7-4)</label><select id="MyBasis"><option value="nominal" selected>Nominal: My = 2.54·S·Fb′/CD (NDS App. N KF, Broms' yield moment)</option><option value="off">Off: short-pile Broms only (pre-TPC §7.2 behaviour, reproduces R2 package)</option><option value="allowable">Allowable: My = S·Fb′ incl. CD (TPC §7.2 Step 4, p.57; with FS this is ≈ FS × the bending check)</option></select></div>
                 <div><label>Nq override (blank = API RP 2A by φ)</label><input type="number" id="NqOv" value="" step="1"></div>
             </div>
 
@@ -346,10 +365,11 @@
             let Fc, Fb, materialName;
             
             if (pileType === 'timber') {
-                let species = document.getElementById('species').value;
-                Fc = (species === 'SP') ? 1200 : 1250; // psi
-                Fb = (species === 'SP') ? 2400 : 2450; // psi
-                materialName = species === 'SP' ? 'Southern Pine' : 'Douglas Fir';
+                // same reference values as the main solver: square = sawn timber grade (Table 4D), round = pile species (Table 6A)
+                const tr = timberRef({ shape: shape, sawnGrade: strVal('sawnGrade', 'SP_1'), species: strVal('species', 'SP'), roundBasis: strVal('roundBasis', 'NDS'), conditioning: strVal('conditioning', 'steam'), loadShare: strVal('loadShare', 'cluster'), d: d_trial });
+                Fc = tr.Fc * tr.CM_Fc * (tr.Cu_Fc || 1) * (tr.Cls_Fc || 1);            // psi (CD, CP not applied in this legacy quick check)
+                Fb = tr.Fb * tr.CM_Fb * tr.CF_Fb * (tr.Cu_Fb || 1) * (tr.Cls_Fb || 1); // psi
+                materialName = tr.name;
             } else {
                 // Concrete
                 let fc_prime = parseFloat(document.getElementById('fc_prime').value) || 5000;
@@ -357,7 +377,7 @@
                 Fb = 0.45 * Math.sqrt(fc_prime) * 1.5; // Conservative allowable bending (approx modulus of rupture / FS)
                 materialName = `Concrete f'c=${fc_prime} psi`;
             }
-            if (shape === 'square') materialName += ' (square)';
+            if (shape === 'square' && pileType !== 'timber') materialName += ' (square)';
 
             // ===================== STRUCTURAL CHECK (find min diameter) =====================
             let minD = 8;
@@ -423,7 +443,7 @@
                     <tr><td>Recommended Total Pile Length</td><td><strong>${total_L} ft</strong> (embed + height + buffer)</td></tr>
                 </table>
                 <p><strong>✅ OK to use ${d_use.toFixed(1)}" ${shape === 'square' ? 'square' : 'diameter'} pile with ${L_req.toFixed(1)} ft embedment.</strong></p>
-                <p style="font-size:0.85em;">Wind speed ${document.getElementById('wind').value} mph noted for reference only.</p>
+                <p style="font-size:0.85em;">Basic wind speed V = ${numVal('wind', 143)} mph${lastBW ? ' (Building Wind Helper applied: Wh, Wot, pile qz derived from this V)' : ' — click "Compute building wind" to derive Wh / Wot / qz from it; manually entered Wh / qz are used as entered'}.</p>
             `;
             document.getElementById('results').innerHTML = html;
 
@@ -449,14 +469,14 @@
                 P: numVal('P', 0), Hx: numVal('Hx', 0), Hy: numVal('Hy', 0), h: numVal('h', 0),
                 gammaEff: numVal('gamma', 55), phi: numVal('phi', 30),
                 pileType: pileType, shape: strVal('shape', 'square') === 'square' ? 'square' : 'round',
-                species: strVal('species', 'SP'), sawnGrade: strVal('sawnGrade', 'SP_1'),
+                species: strVal('species', 'SP'), sawnGrade: strVal('sawnGrade', 'SP_1'), roundBasis: strVal('roundBasis', 'NDS'), conditioning: strVal('conditioning', 'steam'), loadShare: strVal('loadShare', 'cluster'),
                 fc_prime: numVal('fc_prime', 5000), d: numVal('d_trial', 12),
                 D: numVal('Dld', 0), L: numVal('Lld', 0), Lr: numVal('Lrld', 0), Wv: numVal('Wvld', 0), Wh: numVal('Whld', 0),
                 Wot: numVal('Wot', 0), qzPile: numVal('qzPile', 0), CfPile: numVal('CfPile', NaN), braceFoot: numVal('braceFoot', 1),
                 CStr: numVal('CStr', NaN), CB: numVal('CB', 1.0), impactCD: numVal('impactCD', 1.6), bw: lastBW,
                 pileUnitWt: numVal('pileUnitWt', NaN),
                 Ltip: numVal('Ltip', NaN), dw: numVal('dw', 0), gammaM: numVal('gammaM', 110), delta: numVal('delta', NaN),
-                Kc: numVal('Kc', 1.0), Kt: numVal('Kt', 0.8), FSc: numVal('FSc', 2.5), FSt: numVal('FSt', 3.0), FSlat: numVal('FSlat', 2.0),
+                Kc: numVal('Kc', 1.0), Kt: numVal('Kt', 0.8), FSc: numVal('FSc', 2.5), FSt: numVal('FSt', 3.0), FSlat: numVal('FSlat', 2.5), MyBasis: strVal('MyBasis', 'nominal'),
                 NqOv: numVal('NqOv', NaN), soilType: strVal('soilType', 'sand') === 'clay' ? 'clay' : 'sand', suTop: numVal('suTop', 500), suGrad: numVal('suGrad', 0), suMax: numVal('suMax', 2000),
                 dfix: numVal('dfix', NaN), Ke: numVal('Ke', 2.1), topCond: ['braced', 'sway', 'free'].indexOf(strVal('topCond', 'sway')) >= 0 ? strVal('topCond', 'sway') : 'sway',
                 topFix: numVal('topFix', 0.5), KeFix: numVal('KeFix', 1.2), connZ: numVal('connZ', 1.93), connGeom: strVal('connGeom', '2/6/1'), connMcap: numVal('connMcap', NaN), connType: strVal('connType', 'bolted'), notchGeom: strVal('notchGeom', '11.25/3/1.5/2'), notchShoulder: strVal('notchShoulder', 'dado'), FcPerp: numVal('FcPerp', 379), debrisShareN: numVal('debrisShareN', 0), driftN: numVal('driftN', 100), driftBasis: strVal('driftBasis', 'strength'), svcF: numVal('svcF', 0.42), WhY: numVal('WhY', 0), KeBr: numVal('KeBr', 1.0), Ct: numVal('Ct', 1.0),
@@ -520,10 +540,17 @@
             return { qh, Kz: Kz7_22(o.h, o.exp), theta, rise, eave, Fww: Fww / 1000, Flw: Flw / 1000, Froof: Froof / 1000, cpl, cww, clw, V,
                      n, shareRigid, shareTrib, share, M, OT, Wot, zb, qzPile, o };
         }
+        // One basic wind speed for the whole tool: the top input and the helper input stay in sync; once the helper
+        // has been applied, a speed change re-derives Wh / Wot / qz so every wind-dependent check uses the new V.
+        function windChanged(src) {
+            const v = numVal(src, 143), other = document.getElementById(src === 'wind' ? 'bwV' : 'wind');
+            if (other) other.value = v;
+            if (lastBW) applyBuildingWind(); else calculate();
+        }
         function applyBuildingWind() {
             const k = (strVal('bwK', '0.85/1.0/1.0')).split('/').map(parseFloat);
             const g = (strVal('bwGrid', '3x6')).toLowerCase().split('x').map(x => parseInt(x, 10));
-            const o = { V: numVal('bwV', 143), exp: strVal('bwExp', 'C'), h: numVal('bwh', 30), hB: numVal('bwhB', 10), hF: numVal('h', 10),
+            const o = { V: numVal('wind', numVal('bwV', 143)), exp: strVal('bwExp', 'C'), h: numVal('bwh', 30), hB: numVal('bwhB', 10), hF: numVal('h', 10),
                         qh: numVal('bwQh', NaN), Kd: k[0], Kzt: k[1], Ke: k[2], B: numVal('bwB', 50), L: numVal('bwL', 30),
                         roof: strVal('bwRoof', 'gable'), pitch: numVal('bwPitch', 5), rows: g[0] || 3, lines: g[1] || 3, rowSp: numVal('bwRowSp', 12),
                         method: strVal('bwMethod', 'trib'), pos: strVal('bwPos', 'interior') };
@@ -562,15 +589,29 @@
                 }[inp.sawnGrade] || ['Southern Pine No.1', 1350, 825, 550000];
                 const Etab = { SP_SS: 1500000, SP_1: 1500000, SP_2: 1200000, DF_1: 1600000, DF_2: 1300000 };
                 return { name: T[0] + ' sawn timber (NDS Supp. Table 4D)', Fb: T[1], Fc: T[2], Emin: T[3], E: Etab[inp.sawnGrade] || 1500000,
-                         CM_Fb: 1.0, CM_Fc: 0.91, CM_E: 1.0,             // wet service, Table 4D
+                         // wet service: Table 4D Southern Pine timber values are already wet-service (CM not applied);
+                         // other species (DF-L) take CM = 0.91 on Fc, 1.0 on Fb and E
+                         CM_Fb: 1.0, CM_Fc: /^SP_/.test(inp.sawnGrade || 'SP_1') ? 1.0 : 0.91, CM_E: 1.0,
                          CF_Fb: d > 12 ? Math.pow(12 / d, 1 / 9) : 1.0,  // size factor, Table 4D
                          c: 0.8 };
             }
-            const sp = inp.species === 'DF';
-            return { name: (sp ? 'Douglas Fir' : 'Southern Pine') + ' round timber pile (NDS Table 6A)',
-                     Fb: sp ? 2450 : 2400, Fc: sp ? 1250 : 1200, Emin: 790000, E: 1500000,
+            // NDS Supplement Table 6A (treated round piles) vs Timber Pile Design & Construction Manual (TPC 2016) Table 3-1, p.9
+            const NDS6A = { SP: ['Southern Pine', 1200, 2400, 1500000, 790000], DF: ['Pacific Coast Douglas Fir', 1250, 2450, 1500000, 790000] };
+            const TPC31 = { SP: ['Southern Pine', 1250, 1950, 1500000], DF: ['Douglas Fir', 1300, 2050, 1500000], LP: ['Lodgepole Pine', 1150, 1700, 1000000],
+                            RO: ['Red Oak', 1100, 2450, 1250000], RP: ['Red Pine', 850, 1350, 1300000] };
+            const spc = TPC31[inp.species] ? inp.species : 'SP';
+            const useTPC = inp.roundBasis === 'TPC' || !NDS6A[spc];
+            let nm, Fc, Fb, E, Emin;
+            if (useTPC) { const t = TPC31[spc]; nm = t[0] + ' round timber pile (TPC Manual Table 3-1)'; Fc = t[1]; Fb = t[2]; E = t[3];
+                          Emin = Math.round(E * 790000 / 1500000); }   // manual gives no Emin: NDS 6A Emin/E ratio (0.527) assumed
+            else { const t = NDS6A[spc]; nm = t[0] + ' round timber pile (NDS Table 6A)'; Fc = t[1]; Fb = t[2]; E = t[3]; Emin = t[4]; }
+            const Cu = inp.conditioning === 'air' ? (spc === 'SP' ? 1.18 : spc === 'DF' ? 1.11 : 1.0) : 1.0;   // TPC Table 3-10, NDS 6.3.5
+            const single = inp.loadShare === 'single';
+            return { name: nm, Fb, Fc, Emin, E,
                      CM_Fb: 1.0, CM_Fc: 1.0, CM_E: 1.0,                  // pile values already wet service
-                     CF_Fb: d > 13.5 ? Math.pow(13.5 / d, 1 / 9) : 1.0,  // NDS 6.3.7
+                     // size factor: NDS 6.3.8 (13.5/d)^(1/9); TPC Eq. 3-5 (p.16-17) (12/d)^(1/9), both only for d > 13.5"
+                     CF_Fb: d > 13.5 ? Math.pow((useTPC ? 12 : 13.5) / d, 1 / 9) : 1.0,
+                     Cu_Fc: Cu, Cu_Fb: Cu, Cls_Fc: single ? 0.80 : 1.0, Cls_Fb: single ? 0.77 : 1.0,
                      c: 0.85 };
         }
 
@@ -647,7 +688,8 @@
             const sway = inp.topCond === 'sway';
             const alpha = sway ? Math.min(1, Math.max(0, isFinite(inp.topFix) ? inp.topFix : 0.5)) : 0;
             const KeFix = isFinite(inp.KeFix) ? inp.KeFix : 1.2;
-            const Esw = tim ? tim.E * inp.Ct : 57000 * Math.sqrt(inp.fc_prime || 5000);
+            const CtE = inp.Ct >= 1 ? 1.0 : 0.9;   // TPC Manual Table 3-10 / NDS Table 2.3.3: E takes 0.9 at 100-150°F, not the strength Ct
+            const Esw = tim ? tim.E * CtE : 57000 * Math.sqrt(inp.fc_prime || 5000);
             const driftN = isFinite(inp.driftN) && inp.driftN > 0 ? inp.driftN : 100;
             // Top connection moment capacity: bolts in one vertical line per beam end, M = Z' Σr²/r_max per end × ends
             const conn = (() => {
@@ -761,6 +803,49 @@
                 if (V < 1e-9 && M < 1e-9) return 0;
                 for (let L = 0.5; L <= 80; L += 0.05) if (0.5 * gs * bft * Math.pow(L, 3) * Kp >= FS * (V * L + M)) return L;
                 return 80;
+            }
+            // ---- Broms short / long / intermediate (TPC Manual 2016 §7.2, pp.55-63) ----
+            // Short-pile soil failure λs(L) (Fig. 7-1 clay, 7-3 sand) and long-pile yield λl (Fig. 7-2 clay, 7-4 sand,
+            // My = S·Fb per Step 4). Governing capacity = lower of the two (Step 9e). Classification by ηD / βhD (Step 7).
+            function bisectLam(g) { let lo = 0, hi = 1; while (g(hi) < 0 && hi < 1e6) hi *= 2; for (let i = 0; i < 40; i++) { const m = (lo + hi) / 2; if (g(m) < 0) lo = m; else hi = m; } return hi; }
+            function lamShort(V, M, L, drop) {
+                V = Math.abs(V); M = Math.abs(M); if (V < 1e-9 && M < 1e-9) return Infinity; if (L <= 0) return 0;
+                if (!clay) return 0.5 * gs * bft * Kp * Math.pow(L, 3) / (V * L + M);              // Fig. 7-3: moments about the toe
+                return bisectLam(l => (bromsClayL(l * V, l * M, 1, drop) >= L ? 1 : -1));        // Fig. 7-1: 9cu·b, top 1.5b ignored
+            }
+            function lamLong(V, M, My, drop) {
+                V = Math.abs(V); M = Math.abs(M); if (V < 1e-9 && M < 1e-9) return Infinity;
+                const cu = clay ? su(1.5 * bft + 2, drop) : 0;
+                const Mmax = l => clay ? l * M + l * V * (1.5 * bft + 0.5 * l * V / (9 * cu * bft))        // Fig. 7-2
+                                       : l * M + l * V * 0.67 * 0.82 * Math.sqrt(l * V / (gs * bft * Kp)); // Fig. 7-4 (f = 0.82√(Q/γbKp))
+                return bisectLam(l => Mmax(l) - My);
+            }
+            function latCapacity(V, M, Lav, drop, spC, Esw, FbP, isF) {
+                const My = spC.S * FbP / 12000;                                  // k-ft, Step 4: My = S·Fb
+                const EI = Esw * spC.I / 1000 / 144;                             // k-ft²
+                let Kh, rel, cls;
+                if (!clay) {
+                    // Table 7-2 (kcf); density from φ (assumed: <30 loose, 30-36 medium, >36 dense); below GW if flooded
+                    // or groundwater within the critical depth 4-5 b (Step 1)
+                    const wet = isF || inp.dw <= 4.5 * bft, dens = inp.phi < 30 ? 0 : inp.phi <= 36 ? 1 : 2;
+                    Kh = (wet ? [7, 35, 69] : [12, 52, 112])[dens];
+                    rel = Math.pow(Kh / EI, 0.2) * Lav;                          // ηD
+                    cls = rel < 2 ? 'short' : rel > 4 ? 'long' : 'intermediate';
+                } else {
+                    const qu = 2 * su(1.5 * bft + 2, drop) * 1000;               // psf (cu = 0.5 qu, Step 8c)
+                    const n1 = qu < 1000 ? 0.32 : qu <= 4000 ? 0.36 : 0.40;      // Table 7-1
+                    const n2 = inp.pileType === 'timber' ? 1.30 : 1.15;          // Eq. 7-1 timber; 1.15 concrete (FHWA) assumed
+                    Kh = n1 * n2 * 1670 * qu / bft / 1000;                       // kcf
+                    rel = Math.pow(Kh * bft / (4 * EI), 0.25) * Lav;             // βhD
+                    cls = rel < 2.0 ? 'short' : rel > 2.5 ? 'long' : 'intermediate';
+                }
+                const ll = lamLong(V, M, My, drop);
+                let lsC;   // short-pile λ is only needed for reporting (the solver uses Lreq); computed on demand (clay bisection is costly)
+                return { My, Kh, rel, relLbl: clay ? 'βhD' : 'ηD', cls, lamL: ll,
+                         get lamS() { return lsC === undefined ? (lsC = lamShort(V, M, Lav, drop)) : lsC; },
+                         get lam() { return Math.min(this.lamS, ll); },
+                         get mode() { return ll < this.lamS ? 'long (pile yield)' : 'short (soil)'; },
+                         ratio: (Lreq, FS) => { const rs = Lav > 0 ? Lreq / Lav : (Lreq > 0 ? 99 : 0); return Math.max(rs, isFinite(ll) ? FS / ll : 0); } };
             }
             // Top braced (pinned) at framing: propped cantilever fixed at depth dfix below scour line, pinned at top.
             // Loads between scour line and framing (y measured above scour line). Wind at the top goes to the diaphragm.
@@ -893,8 +978,8 @@
                 const fb = br.Mmax * 12000 / spC.S;
                 if (tim) {
                     const CD = c.CD;
-                    const FcStar = tim.Fc * CD * tim.CM_Fc * inp.Ct;
-                    const EminP = tim.Emin * tim.CM_E * inp.Ct;
+                    const FcStar = tim.Fc * CD * tim.CM_Fc * inp.Ct * (tim.Cu_Fc || 1) * (tim.Cls_Fc || 1);
+                    const EminP = tim.Emin * tim.CM_E * CtE;
                     const Kef = braced ? inp.KeBr : (sway ? inp.Ke - aL * (inp.Ke - KeFix) : inp.Ke);
                     const le = (braced ? inp.KeBr * top : Kef * (top + dfix)) * 12;
                     const sr = le / spC.deq;
@@ -902,13 +987,17 @@
                     const al = FcE / FcStar;
                     const Cp = (1 + al) / (2 * tim.c) - Math.sqrt(Math.pow((1 + al) / (2 * tim.c), 2) - al / tim.c);
                     const FcP = FcStar * Cp;
-                    const FbP = tim.Fb * CD * tim.CM_Fb * inp.Ct * tim.CF_Fb;
+                    const FbP = tim.Fb * CD * tim.CM_Fb * inp.Ct * tim.CF_Fb * (tim.Cu_Fb || 1) * (tim.Cls_Fb || 1);
                     const ratio = fc >= FcE ? 99 : Math.pow(fc / FcP, 2) + fb / (FbP * (1 - fc / FcE));
                     st = { fc, fb, FcP, FbP, FcE, Cp, sr, ratio, slenderOK: sr <= 50, Kef, le: le / 12 };
                 } else {
                     const Fc = 0.33 * fcp, Fb = 0.45 * Math.sqrt(fcp) * 1.5;
                     st = { fc, fb, FcP: Fc, FbP: Fb, ratio: fc / Fc + fb / Fb, slenderOK: true };
                 }
+                // Broms lateral capacity per TPC Manual §7.2 Steps 1-9 (pp.55-58; Figs 7-1..7-4, FHWA-NHI-05-042/043),
+                // using the closed-form Broms (1964a,b) equations the figures plot. Free head at the ground line (scour line):
+                // every top condition here reduces to shear V and moment M at grade. λ = ultimate / applied load multiplier.
+                const lat = latCapacity(br.H, br.M0, Lav, drop, spC, Esw, inp.MyBasis === 'allowable' ? st.FbP : 2.54 * st.FbP / (tim ? c.CD : 1), isF);
 
                 function momentsFor(fs) {        // max pile moment & top moment for an arbitrary force set (unbraced modes)
                     if (sway) {
@@ -992,7 +1081,7 @@
                     id: c.id, name: c.name, CD: c.CD, dScour, P, Wp, Pc, H: br.H, M0: br.M0, e: br.e, Mmax: br.Mmax, f: br.f,
                     Rtop: br.Rtop, Wtop: br.Wtop, Mabove: br.Mabove, Mbelow: br.Mbelow, Lreq: br.Lreq, tipReq: br.Lreq + drop, Lav, drop,
                     st, Qs_c, Qb, Qa_c, Qs_t, Qa_t, T,
-                    drift, driftStr, driftLim, ampl, rDrift, rConn, notch, aL, Mcapped: !!br.capped, biax, Mtop: br.Mtop || 0, rStruct: st.ratio, rEmbed: Lav > 0 ? br.Lreq / Lav : (br.Lreq > 0 ? 99 : 0),
+                    drift, driftStr, driftLim, ampl, rDrift, rConn, notch, aL, Mcapped: !!br.capped, biax, Mtop: br.Mtop || 0, rStruct: st.ratio, rEmbed: Lav > 0 ? br.Lreq / Lav : (br.Lreq > 0 ? 99 : 0), rLatLong: inp.MyBasis !== 'off' && isFinite(lat.lamL) ? inp.FSlat / lat.lamL : 0, lat,
                     rComp: Pc > 0 ? Pc / Qa_c : 0, rUplift: T > 0 ? (Qa_t > 0 ? T / Qa_t : 99) : 0
                 };
             }
@@ -1003,7 +1092,7 @@
             tipDesign = Math.max(tipDesign, 5);
             const rows = combos.map(c => evalCombo(c, tipDesign));
             const gov = {};
-            ['rStruct', 'rEmbed', 'rComp', 'rUplift', 'rDrift', 'rConn'].forEach(k => {
+            ['rStruct', 'rEmbed', 'rLatLong', 'rComp', 'rUplift', 'rDrift', 'rConn'].forEach(k => {
                 let best = rows[0];
                 rows.forEach(r => { if (r[k] > best[k]) best = r; });
                 gov[k] = { ratio: best[k], id: best.id, name: best.name };
@@ -1016,7 +1105,8 @@
         // ===================== AUTO-EMBEDMENT SOLVER =====================
         // Every check that is evaluated at a given tip depth. ratio ≤ 1.0 = pass.
         const EMBED_CHECKS = [
-            { k: 'rEmbed', lbl: 'Lateral embedment (Broms)' },
+            { k: 'rEmbed', lbl: 'Lateral embedment (Broms short pile, TPC §7.2 Fig. 7-1/7-3)' },
+            { k: 'rLatLong', lbl: 'Lateral long-pile yield (Broms, TPC §7.2 Fig. 7-2/7-4)' },
             { k: 'rStruct', lbl: 'Structural: combined axial + bending above & below grade (NDS 3.9.2 / ASD)' },
             { k: 'rComp', lbl: 'Axial compression capacity (skin + tip, FS)' },
             { k: 'rUplift', lbl: 'Uplift / pullout (skin + pile weight, FS)' },
@@ -1027,7 +1117,7 @@
         // Collect the governing ratio of each check from a pileDesign() result
         function checkRatios(res) {
             const out = {};
-            ['rStruct', 'rEmbed', 'rComp', 'rUplift', 'rDrift', 'rConn'].forEach(k => { out[k] = res.gov[k]; });
+            ['rStruct', 'rEmbed', 'rLatLong', 'rComp', 'rUplift', 'rDrift', 'rConn'].forEach(k => { out[k] = res.gov[k]; });
             let best = { ratio: 0, id: '–', name: res.tim ? '' : 'n/a (concrete)' };
             if (res.tim) res.rows.forEach(r => { const q = (r.st.sr || 0) / 50; if (q > best.ratio) best = { ratio: q, id: r.id, name: r.name }; });
             out.slender = best;
@@ -1193,7 +1283,7 @@
             res.rows.forEach(r => {
                 t += `<tr><td style="text-align:left">${r.id}: ${r.name}</td><td>${f2(r.P)}</td><td>${f2(r.Wp)}</td><td>${f2(r.H)}</td><td>${f2(r.M0, 1)}</td><td>${f2(r.Mabove, 1)} / ${f2(r.Mbelow, 1)}</td><td>${r.CD}</td>
                       <td>${f2(r.st.FcP, 0)} / ${f2(r.st.FbP, 0)}</td><td class="${cls(r.rStruct)}">${f2(r.rStruct)}</td>
-                      <td>${f2(r.Lreq, 1)} / ${f2(r.Lav, 1)}</td><td class="${cls(r.rEmbed)}">${f2(r.rEmbed)}</td>
+                      <td>${f2(r.Lreq, 1)} / ${f2(r.Lav, 1)}<br><small>${r.lat ? r.lat.cls + ' ' + r.lat.relLbl + ' ' + f2(r.lat.rel, 1) + '; gov ' + r.lat.mode + ', λ ' + f2(Math.min(r.lat.lam, 99), 2) : ''}</small></td><td class="${cls(r.rEmbed)}">${f2(r.rEmbed)}</td>
                       <td>${f2(Math.max(r.Pc, 0))} / ${f2(r.Qa_c)}</td><td class="${cls(r.rComp)}">${f2(r.rComp)}</td>
                       <td>${f2(r.T)} / ${f2(r.Qa_t)}</td><td class="${cls(r.rUplift)}">${f2(r.rUplift)}</td>
                       <td class="${cls(r.rDrift)}">${f2(r.drift * 12)} / ${f2(r.rDrift)}</td><td class="${cls(r.rConn)}">${f2(r.Mtop, 1)} / ${f2(r.rConn, 1)}</td><td>${r.biax ? f2(r.biax.rY1) + ' / ' + f2(r.biax.r3) : '–'}</td></tr>`;
@@ -1202,7 +1292,7 @@
         }
         function effAlpha(res) { if (res.conn && res.conn.type === 'notched') { const r = (res.rows || []).filter(x => x.aL != null); return r.length ? Math.max(...r.map(x => x.aL)) : res.alpha; } return res.alpha; }
         function govTable(res) {
-            const g = res.gov, lbl = { rStruct: 'Structural (NDS 3.9.2 / ASD)', rEmbed: 'Lateral embedment (Broms)', rComp: 'Axial compression (skin + end bearing)', rUplift: 'Uplift / pullout (skin + pile weight)' };
+            const g = res.gov, lbl = { rStruct: 'Structural (NDS 3.9.2 / ASD)', rEmbed: 'Lateral embedment (Broms short pile)', rLatLong: 'Lateral long-pile yield (Broms)', rComp: 'Axial compression (skin + end bearing)', rUplift: 'Uplift / pullout (skin + pile weight)' };
             let t = '<table><tr><th>Check</th><th>Governing ratio</th><th>Combo</th><th>Result</th></tr>';
             Object.keys(lbl).forEach(k => {
                 t += `<tr><td>${lbl[k]}</td><td class="${cls(g[k].ratio)}">${f2(g[k].ratio)}</td><td>${g[k].id}: ${g[k].name}</td><td>${g[k].ratio > 1 ? '❌ FAILS' : '✅ OK'}</td></tr>`;
@@ -1227,7 +1317,7 @@
             const t = res.tim;
             let h = `<h2>Advanced Checks — ASCE 7-22 ASD Combinations</h2>
                 <p>Section ${inp.shape} ${inp.d}": A ${f2(res.sp.A, 1)} in², S ${f2(res.sp.S, 1)} in³, I ${f2(res.sp.I, 0)} in⁴, perimeter ${f2(res.sp.per, 1)} in.
-                ${t ? t.name + ': Fb ' + t.Fb + ', Fc ' + t.Fc + ', Emin ' + t.Emin + ' psi; CM(Fc) ' + t.CM_Fc + ', CF(Fb) ' + f2(t.CF_Fb, 3) + ', Ct ' + inp.Ct + ', Ke ' + inp.Ke + ', fixity ' + f2(res.dfix, 1) + ' ft.' : 'Concrete (preliminary ASD).'}
+                ${t ? t.name + ': Fb ' + t.Fb + ', Fc ' + t.Fc + ', Emin ' + t.Emin + ' psi; CM(Fc) ' + t.CM_Fc + ', CF(Fb) ' + f2(t.CF_Fb, 3) + (t.Cu_Fc ? ', Cu ' + t.Cu_Fc + ', Cls ' + t.Cls_Fc + '/' + t.Cls_Fb : '') + ', Ct ' + inp.Ct + ', Ke ' + inp.Ke + ', fixity ' + f2(res.dfix, 1) + ' ft.' : 'Concrete (preliminary ASD).'}
                 Soil: ${inp.soilType === 'clay' ? 'CLAY su ' + inp.suTop + ' psf + ' + inp.suGrad + ' psf/ft (cap ' + inp.suMax + '), α method, 9su end bearing, Broms clay; ' : ''}Kp ${f2(res.Kp)}, δ ${res.delta}°, Nq ${res.Nq}, f<sub>s,lim</sub> ${res.api.fslim} ksf, q<sub>lim</sub> ${res.api.qlim} ksf. Pile tip ${f2(res.tipUsed, 1)} ft below grade (${res.tipSource || (res.tipGiven ? 'input' : 'required, design mode')}); max required tip ${f2(res.tipReqMax, 1)} ft.</p>`;
             if (inp.topCond === 'braced') {
                 const mx = res.rows.reduce((a, r) => Math.max(a, (r.Rtop || 0) + (r.Wtop || 0)), 0);
