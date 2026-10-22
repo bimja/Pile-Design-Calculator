@@ -63,8 +63,8 @@
         <label>Height Above Grade h (ft)</label>
         <input type="number" id="h" value="12" step="0.1">
         
-        <label>Basic Wind Speed (mph) — reference only (Galveston area typical 140-150 mph)</label>
-        <input type="number" id="wind" value="150" disabled>
+        <label>Basic Wind Speed V (mph, ASCE 7-22 Fig. 26.5-1; Galveston area typical 140-150 mph) — drives the Building Wind Helper (Wh, Wot, pile qz)</label>
+        <input type="number" id="wind" value="143" step="1" onchange="windChanged('wind')">
         
         <h2>Soil Parameters (Galveston TX Coast Defaults — Sandy Soil)</h2>
         <label>Effective (submerged) Unit Weight γ' (pcf)</label>
@@ -164,7 +164,7 @@
             <h3>Building Wind Helper (optional) — fills Wh, Wot and pile qz</h3>
             <p style="font-size:0.85em;">ASCE 7-22 directional procedure (Ch. 27), G 0.85, windward wall Cp 0.8 with q<sub>z</sub>, leeward wall Cp by L/B, roof Cp (Fig. 27.3-1, wind normal to ridge). Wind normal to the B face; piles in rows (along wind) × lines (across wind).</p>
             <div class="grid2">
-                <div><label>Basic wind speed V (mph)</label><input type="number" id="bwV" value="143" step="1"></div>
+                <div><label>Basic wind speed V (mph)</label><input type="number" id="bwV" value="143" step="1" onchange="windChanged('bwV')"></div>
                 <div><label>Exposure</label><select id="bwExp"><option value="B">B</option><option value="C" selected>C</option><option value="D">D</option></select></div>
                 <div><label>Mean roof height above grade h (ft)</label><input type="number" id="bwh" value="41" step="0.5"></div>
                 <div><label>Bottom of floor framing above grade hB (ft)</label><input type="number" id="bwhB" value="10" step="0.5"></div>
@@ -346,10 +346,11 @@
             let Fc, Fb, materialName;
             
             if (pileType === 'timber') {
-                let species = document.getElementById('species').value;
-                Fc = (species === 'SP') ? 1200 : 1250; // psi
-                Fb = (species === 'SP') ? 2400 : 2450; // psi
-                materialName = species === 'SP' ? 'Southern Pine' : 'Douglas Fir';
+                // same reference values as the main solver: square = sawn timber grade (Table 4D), round = pile species (Table 6A)
+                const tr = timberRef({ shape: shape, sawnGrade: strVal('sawnGrade', 'SP_1'), species: strVal('species', 'SP'), d: d_trial });
+                Fc = tr.Fc * tr.CM_Fc;            // psi (CD, CP not applied in this legacy quick check)
+                Fb = tr.Fb * tr.CM_Fb * tr.CF_Fb; // psi
+                materialName = tr.name;
             } else {
                 // Concrete
                 let fc_prime = parseFloat(document.getElementById('fc_prime').value) || 5000;
@@ -357,7 +358,7 @@
                 Fb = 0.45 * Math.sqrt(fc_prime) * 1.5; // Conservative allowable bending (approx modulus of rupture / FS)
                 materialName = `Concrete f'c=${fc_prime} psi`;
             }
-            if (shape === 'square') materialName += ' (square)';
+            if (shape === 'square' && pileType !== 'timber') materialName += ' (square)';
 
             // ===================== STRUCTURAL CHECK (find min diameter) =====================
             let minD = 8;
@@ -423,7 +424,7 @@
                     <tr><td>Recommended Total Pile Length</td><td><strong>${total_L} ft</strong> (embed + height + buffer)</td></tr>
                 </table>
                 <p><strong>✅ OK to use ${d_use.toFixed(1)}" ${shape === 'square' ? 'square' : 'diameter'} pile with ${L_req.toFixed(1)} ft embedment.</strong></p>
-                <p style="font-size:0.85em;">Wind speed ${document.getElementById('wind').value} mph noted for reference only.</p>
+                <p style="font-size:0.85em;">Basic wind speed V = ${numVal('wind', 143)} mph${lastBW ? ' (Building Wind Helper applied: Wh, Wot, pile qz derived from this V)' : ' — click "Compute building wind" to derive Wh / Wot / qz from it; manually entered Wh / qz are used as entered'}.</p>
             `;
             document.getElementById('results').innerHTML = html;
 
@@ -520,10 +521,17 @@
             return { qh, Kz: Kz7_22(o.h, o.exp), theta, rise, eave, Fww: Fww / 1000, Flw: Flw / 1000, Froof: Froof / 1000, cpl, cww, clw, V,
                      n, shareRigid, shareTrib, share, M, OT, Wot, zb, qzPile, o };
         }
+        // One basic wind speed for the whole tool: the top input and the helper input stay in sync; once the helper
+        // has been applied, a speed change re-derives Wh / Wot / qz so every wind-dependent check uses the new V.
+        function windChanged(src) {
+            const v = numVal(src, 143), other = document.getElementById(src === 'wind' ? 'bwV' : 'wind');
+            if (other) other.value = v;
+            if (lastBW) applyBuildingWind(); else calculate();
+        }
         function applyBuildingWind() {
             const k = (strVal('bwK', '0.85/1.0/1.0')).split('/').map(parseFloat);
             const g = (strVal('bwGrid', '3x6')).toLowerCase().split('x').map(x => parseInt(x, 10));
-            const o = { V: numVal('bwV', 143), exp: strVal('bwExp', 'C'), h: numVal('bwh', 30), hB: numVal('bwhB', 10), hF: numVal('h', 10),
+            const o = { V: numVal('wind', numVal('bwV', 143)), exp: strVal('bwExp', 'C'), h: numVal('bwh', 30), hB: numVal('bwhB', 10), hF: numVal('h', 10),
                         qh: numVal('bwQh', NaN), Kd: k[0], Kzt: k[1], Ke: k[2], B: numVal('bwB', 50), L: numVal('bwL', 30),
                         roof: strVal('bwRoof', 'gable'), pitch: numVal('bwPitch', 5), rows: g[0] || 3, lines: g[1] || 3, rowSp: numVal('bwRowSp', 12),
                         method: strVal('bwMethod', 'trib'), pos: strVal('bwPos', 'interior') };
@@ -562,7 +570,9 @@
                 }[inp.sawnGrade] || ['Southern Pine No.1', 1350, 825, 550000];
                 const Etab = { SP_SS: 1500000, SP_1: 1500000, SP_2: 1200000, DF_1: 1600000, DF_2: 1300000 };
                 return { name: T[0] + ' sawn timber (NDS Supp. Table 4D)', Fb: T[1], Fc: T[2], Emin: T[3], E: Etab[inp.sawnGrade] || 1500000,
-                         CM_Fb: 1.0, CM_Fc: 0.91, CM_E: 1.0,             // wet service, Table 4D
+                         // wet service: Table 4D Southern Pine timber values are already wet-service (CM not applied);
+                         // other species (DF-L) take CM = 0.91 on Fc, 1.0 on Fb and E
+                         CM_Fb: 1.0, CM_Fc: /^SP_/.test(inp.sawnGrade || 'SP_1') ? 1.0 : 0.91, CM_E: 1.0,
                          CF_Fb: d > 12 ? Math.pow(12 / d, 1 / 9) : 1.0,  // size factor, Table 4D
                          c: 0.8 };
             }
