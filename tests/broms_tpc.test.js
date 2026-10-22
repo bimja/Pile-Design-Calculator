@@ -8,9 +8,9 @@ const sand = { projName: 't', P: 0, Hx: 0, Hy: 0, h: 10, gammaEff: 55, phi: 30, 
   fc_prime: 5000, d: 12, pileUnitWt: NaN, Ltip: 10, dw: 0, gammaM: 110, delta: NaN, Kc: 1, Kt: 0.8, FSc: 2.5, FSt: 3, FSlat: 2.5, NqOv: NaN, dfix: NaN,
   Ke: 2.1, Ct: 1, zone: 'none', BFE: NaN, G: NaN, Esw: NaN, V: NaN, erosion: 0, localScour: NaN, dragA: NaN, debrisOn: false, debrisW: 1000,
   topCond: 'free', KeBr: 1, D: 2, L: 0, Lr: 0, Wv: 0, Wh: 1.0, soilType: 'sand', MyBasis: 'nominal' };
-t('defaults: FS lateral 2.5 (TPC §7.2 Step 10), long-pile check on (allowable My = S·Fb′, Step 4)', () => {
+t('defaults: FS lateral 2.5 (TPC §7.2 Step 10), long-pile check on (nominal My = 2.54·S·Fb′/CD)', () => {
   const html = require('fs').readFileSync(require('path').join(__dirname, '..', 'index.html'), 'utf8');
-  assert(/id="FSlat" value="2.5"/.test(html)); assert(/value="allowable" selected/.test(html)); assert(!/value="nominal" selected/.test(html));
+  assert(/id="FSlat" value="2.5"/.test(html)); assert(/value="nominal" selected/.test(html)); assert(!/value="allowable" selected/.test(html));
 });
 t('sand short free head: Qu = 0.5 γ b L³ Kp / (e + L) (Fig. 7-3) — hand calc', () => {
   const r = lib.pileDesign(sand), w = r.rows.find(x => x.H > 0);
@@ -50,6 +50,6 @@ t('allowable basis: My = S·Fb′ (CD included)', () => {
   const r = lib.pileDesign(Object.assign({}, sand, { MyBasis: 'allowable' })), w = r.rows.find(x => x.H > 0);
   assert(Math.abs(w.lat.My - (Math.PI * 12 ** 3 / 32) * w.st.FbP / 12000) < 1e-9);
   const d = lib.pileDesign(Object.assign({}, sand, { MyBasis: undefined })).rows.find(x => x.H > 0);
-  assert.strictEqual(d.lat.My, w.lat.My, 'unset basis behaves as allowable');
+  assert(Math.abs(d.lat.My - 2.54 * w.lat.My / w.CD) < 1e-9, 'unset basis behaves as nominal');
 });
 console.log(`\n${pass} passed`);
