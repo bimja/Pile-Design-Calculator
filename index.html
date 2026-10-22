@@ -217,7 +217,8 @@
                 <div><label>Lateral earth pressure coeff. K, tension</label><input type="number" id="Kt" value="0.8" step="0.05"></div>
                 <div><label>FS axial compression</label><input type="number" id="FSc" value="2.5" step="0.1"></div>
                 <div><label>FS uplift (2.0–3.0)</label><input type="number" id="FSt" value="3.0" step="0.1" min="2" max="3"></div>
-                <div><label>FS lateral (Broms)</label><input type="number" id="FSlat" value="2.0" step="0.1"></div>
+                <div><label>FS lateral (Broms; TPC Manual §7.2 Step 10: Qm = Qu/2.5)</label><input type="number" id="FSlat" value="2.5" step="0.1"></div>
+                <div><label>Long-pile yield moment My (Broms Figs 7-2 / 7-4)</label><select id="MyBasis"><option value="nominal" selected>Nominal: My = 2.54·S·Fb′/CD (NDS App. N KF, Broms' yield moment)</option><option value="off">Off: short-pile Broms only (pre-TPC §7.2 behaviour, reproduces R2 package)</option><option value="allowable">Allowable: My = S·Fb′ (TPC §7.2 Step 4, literal; with FS this is ≈ FS × the bending check)</option></select></div>
                 <div><label>Nq override (blank = API RP 2A by φ)</label><input type="number" id="NqOv" value="" step="1"></div>
             </div>
 
@@ -475,7 +476,7 @@
                 CStr: numVal('CStr', NaN), CB: numVal('CB', 1.0), impactCD: numVal('impactCD', 1.6), bw: lastBW,
                 pileUnitWt: numVal('pileUnitWt', NaN),
                 Ltip: numVal('Ltip', NaN), dw: numVal('dw', 0), gammaM: numVal('gammaM', 110), delta: numVal('delta', NaN),
-                Kc: numVal('Kc', 1.0), Kt: numVal('Kt', 0.8), FSc: numVal('FSc', 2.5), FSt: numVal('FSt', 3.0), FSlat: numVal('FSlat', 2.0),
+                Kc: numVal('Kc', 1.0), Kt: numVal('Kt', 0.8), FSc: numVal('FSc', 2.5), FSt: numVal('FSt', 3.0), FSlat: numVal('FSlat', 2.5), MyBasis: strVal('MyBasis', 'nominal'),
                 NqOv: numVal('NqOv', NaN), soilType: strVal('soilType', 'sand') === 'clay' ? 'clay' : 'sand', suTop: numVal('suTop', 500), suGrad: numVal('suGrad', 0), suMax: numVal('suMax', 2000),
                 dfix: numVal('dfix', NaN), Ke: numVal('Ke', 2.1), topCond: ['braced', 'sway', 'free'].indexOf(strVal('topCond', 'sway')) >= 0 ? strVal('topCond', 'sway') : 'sway',
                 topFix: numVal('topFix', 0.5), KeFix: numVal('KeFix', 1.2), connZ: numVal('connZ', 1.93), connGeom: strVal('connGeom', '2/6/1'), connMcap: numVal('connMcap', NaN), connType: strVal('connType', 'bolted'), notchGeom: strVal('notchGeom', '11.25/3/1.5/2'), notchShoulder: strVal('notchShoulder', 'dado'), FcPerp: numVal('FcPerp', 379), debrisShareN: numVal('debrisShareN', 0), driftN: numVal('driftN', 100), driftBasis: strVal('driftBasis', 'strength'), svcF: numVal('svcF', 0.42), WhY: numVal('WhY', 0), KeBr: numVal('KeBr', 1.0), Ct: numVal('Ct', 1.0),
@@ -803,6 +804,49 @@
                 for (let L = 0.5; L <= 80; L += 0.05) if (0.5 * gs * bft * Math.pow(L, 3) * Kp >= FS * (V * L + M)) return L;
                 return 80;
             }
+            // ---- Broms short / long / intermediate (TPC Manual 2016 §7.2, pp.55-63) ----
+            // Short-pile soil failure λs(L) (Fig. 7-1 clay, 7-3 sand) and long-pile yield λl (Fig. 7-2 clay, 7-4 sand,
+            // My = S·Fb per Step 4). Governing capacity = lower of the two (Step 9e). Classification by ηD / βhD (Step 7).
+            function bisectLam(g) { let lo = 0, hi = 1; while (g(hi) < 0 && hi < 1e6) hi *= 2; for (let i = 0; i < 40; i++) { const m = (lo + hi) / 2; if (g(m) < 0) lo = m; else hi = m; } return hi; }
+            function lamShort(V, M, L, drop) {
+                V = Math.abs(V); M = Math.abs(M); if (V < 1e-9 && M < 1e-9) return Infinity; if (L <= 0) return 0;
+                if (!clay) return 0.5 * gs * bft * Kp * Math.pow(L, 3) / (V * L + M);              // Fig. 7-3: moments about the toe
+                return bisectLam(l => (bromsClayL(l * V, l * M, 1, drop) >= L ? 1 : -1));        // Fig. 7-1: 9cu·b, top 1.5b ignored
+            }
+            function lamLong(V, M, My, drop) {
+                V = Math.abs(V); M = Math.abs(M); if (V < 1e-9 && M < 1e-9) return Infinity;
+                const cu = clay ? su(1.5 * bft + 2, drop) : 0;
+                const Mmax = l => clay ? l * M + l * V * (1.5 * bft + 0.5 * l * V / (9 * cu * bft))        // Fig. 7-2
+                                       : l * M + l * V * 0.67 * 0.82 * Math.sqrt(l * V / (gs * bft * Kp)); // Fig. 7-4 (f = 0.82√(Q/γbKp))
+                return bisectLam(l => Mmax(l) - My);
+            }
+            function latCapacity(V, M, Lav, drop, spC, Esw, FbP, isF) {
+                const My = spC.S * FbP / 12000;                                  // k-ft, Step 4: My = S·Fb
+                const EI = Esw * spC.I / 1000 / 144;                             // k-ft²
+                let Kh, rel, cls;
+                if (!clay) {
+                    // Table 7-2 (kcf); density from φ (assumed: <30 loose, 30-36 medium, >36 dense); below GW if flooded
+                    // or groundwater within the critical depth 4-5 b (Step 1)
+                    const wet = isF || inp.dw <= 4.5 * bft, dens = inp.phi < 30 ? 0 : inp.phi <= 36 ? 1 : 2;
+                    Kh = (wet ? [7, 35, 69] : [12, 52, 112])[dens];
+                    rel = Math.pow(Kh / EI, 0.2) * Lav;                          // ηD
+                    cls = rel < 2 ? 'short' : rel > 4 ? 'long' : 'intermediate';
+                } else {
+                    const qu = 2 * su(1.5 * bft + 2, drop) * 1000;               // psf (cu = 0.5 qu, Step 8c)
+                    const n1 = qu < 1000 ? 0.32 : qu <= 4000 ? 0.36 : 0.40;      // Table 7-1
+                    const n2 = inp.pileType === 'timber' ? 1.30 : 1.15;          // Eq. 7-1 timber; 1.15 concrete (FHWA) assumed
+                    Kh = n1 * n2 * 1670 * qu / bft / 1000;                       // kcf
+                    rel = Math.pow(Kh * bft / (4 * EI), 0.25) * Lav;             // βhD
+                    cls = rel < 2.0 ? 'short' : rel > 2.5 ? 'long' : 'intermediate';
+                }
+                const ll = lamLong(V, M, My, drop);
+                let lsC;   // short-pile λ is only needed for reporting (the solver uses Lreq); computed on demand (clay bisection is costly)
+                return { My, Kh, rel, relLbl: clay ? 'βhD' : 'ηD', cls, lamL: ll,
+                         get lamS() { return lsC === undefined ? (lsC = lamShort(V, M, Lav, drop)) : lsC; },
+                         get lam() { return Math.min(this.lamS, ll); },
+                         get mode() { return ll < this.lamS ? 'long (pile yield)' : 'short (soil)'; },
+                         ratio: (Lreq, FS) => { const rs = Lav > 0 ? Lreq / Lav : (Lreq > 0 ? 99 : 0); return Math.max(rs, isFinite(ll) ? FS / ll : 0); } };
+            }
             // Top braced (pinned) at framing: propped cantilever fixed at depth dfix below scour line, pinned at top.
             // Loads between scour line and framing (y measured above scour line). Wind at the top goes to the diaphragm.
             function propped(forces, Ht) {
@@ -950,6 +994,10 @@
                     const Fc = 0.33 * fcp, Fb = 0.45 * Math.sqrt(fcp) * 1.5;
                     st = { fc, fb, FcP: Fc, FbP: Fb, ratio: fc / Fc + fb / Fb, slenderOK: true };
                 }
+                // Broms lateral capacity per TPC Manual §7.2 Steps 1-9 (pp.55-58; Figs 7-1..7-4, FHWA-NHI-05-042/043),
+                // using the closed-form Broms (1964a,b) equations the figures plot. Free head at the ground line (scour line):
+                // every top condition here reduces to shear V and moment M at grade. λ = ultimate / applied load multiplier.
+                const lat = latCapacity(br.H, br.M0, Lav, drop, spC, Esw, inp.MyBasis === 'allowable' ? st.FbP : 2.54 * st.FbP / (tim ? c.CD : 1), isF);
 
                 function momentsFor(fs) {        // max pile moment & top moment for an arbitrary force set (unbraced modes)
                     if (sway) {
@@ -1033,7 +1081,7 @@
                     id: c.id, name: c.name, CD: c.CD, dScour, P, Wp, Pc, H: br.H, M0: br.M0, e: br.e, Mmax: br.Mmax, f: br.f,
                     Rtop: br.Rtop, Wtop: br.Wtop, Mabove: br.Mabove, Mbelow: br.Mbelow, Lreq: br.Lreq, tipReq: br.Lreq + drop, Lav, drop,
                     st, Qs_c, Qb, Qa_c, Qs_t, Qa_t, T,
-                    drift, driftStr, driftLim, ampl, rDrift, rConn, notch, aL, Mcapped: !!br.capped, biax, Mtop: br.Mtop || 0, rStruct: st.ratio, rEmbed: Lav > 0 ? br.Lreq / Lav : (br.Lreq > 0 ? 99 : 0),
+                    drift, driftStr, driftLim, ampl, rDrift, rConn, notch, aL, Mcapped: !!br.capped, biax, Mtop: br.Mtop || 0, rStruct: st.ratio, rEmbed: Lav > 0 ? br.Lreq / Lav : (br.Lreq > 0 ? 99 : 0), rLatLong: inp.MyBasis !== 'off' && isFinite(lat.lamL) ? inp.FSlat / lat.lamL : 0, lat,
                     rComp: Pc > 0 ? Pc / Qa_c : 0, rUplift: T > 0 ? (Qa_t > 0 ? T / Qa_t : 99) : 0
                 };
             }
@@ -1044,7 +1092,7 @@
             tipDesign = Math.max(tipDesign, 5);
             const rows = combos.map(c => evalCombo(c, tipDesign));
             const gov = {};
-            ['rStruct', 'rEmbed', 'rComp', 'rUplift', 'rDrift', 'rConn'].forEach(k => {
+            ['rStruct', 'rEmbed', 'rLatLong', 'rComp', 'rUplift', 'rDrift', 'rConn'].forEach(k => {
                 let best = rows[0];
                 rows.forEach(r => { if (r[k] > best[k]) best = r; });
                 gov[k] = { ratio: best[k], id: best.id, name: best.name };
@@ -1057,7 +1105,8 @@
         // ===================== AUTO-EMBEDMENT SOLVER =====================
         // Every check that is evaluated at a given tip depth. ratio ≤ 1.0 = pass.
         const EMBED_CHECKS = [
-            { k: 'rEmbed', lbl: 'Lateral embedment (Broms)' },
+            { k: 'rEmbed', lbl: 'Lateral embedment (Broms short pile, TPC §7.2 Fig. 7-1/7-3)' },
+            { k: 'rLatLong', lbl: 'Lateral long-pile yield (Broms, TPC §7.2 Fig. 7-2/7-4)' },
             { k: 'rStruct', lbl: 'Structural: combined axial + bending above & below grade (NDS 3.9.2 / ASD)' },
             { k: 'rComp', lbl: 'Axial compression capacity (skin + tip, FS)' },
             { k: 'rUplift', lbl: 'Uplift / pullout (skin + pile weight, FS)' },
@@ -1068,7 +1117,7 @@
         // Collect the governing ratio of each check from a pileDesign() result
         function checkRatios(res) {
             const out = {};
-            ['rStruct', 'rEmbed', 'rComp', 'rUplift', 'rDrift', 'rConn'].forEach(k => { out[k] = res.gov[k]; });
+            ['rStruct', 'rEmbed', 'rLatLong', 'rComp', 'rUplift', 'rDrift', 'rConn'].forEach(k => { out[k] = res.gov[k]; });
             let best = { ratio: 0, id: '–', name: res.tim ? '' : 'n/a (concrete)' };
             if (res.tim) res.rows.forEach(r => { const q = (r.st.sr || 0) / 50; if (q > best.ratio) best = { ratio: q, id: r.id, name: r.name }; });
             out.slender = best;
@@ -1234,7 +1283,7 @@
             res.rows.forEach(r => {
                 t += `<tr><td style="text-align:left">${r.id}: ${r.name}</td><td>${f2(r.P)}</td><td>${f2(r.Wp)}</td><td>${f2(r.H)}</td><td>${f2(r.M0, 1)}</td><td>${f2(r.Mabove, 1)} / ${f2(r.Mbelow, 1)}</td><td>${r.CD}</td>
                       <td>${f2(r.st.FcP, 0)} / ${f2(r.st.FbP, 0)}</td><td class="${cls(r.rStruct)}">${f2(r.rStruct)}</td>
-                      <td>${f2(r.Lreq, 1)} / ${f2(r.Lav, 1)}</td><td class="${cls(r.rEmbed)}">${f2(r.rEmbed)}</td>
+                      <td>${f2(r.Lreq, 1)} / ${f2(r.Lav, 1)}<br><small>${r.lat ? r.lat.cls + ' ' + r.lat.relLbl + ' ' + f2(r.lat.rel, 1) + '; gov ' + r.lat.mode + ', λ ' + f2(Math.min(r.lat.lam, 99), 2) : ''}</small></td><td class="${cls(r.rEmbed)}">${f2(r.rEmbed)}</td>
                       <td>${f2(Math.max(r.Pc, 0))} / ${f2(r.Qa_c)}</td><td class="${cls(r.rComp)}">${f2(r.rComp)}</td>
                       <td>${f2(r.T)} / ${f2(r.Qa_t)}</td><td class="${cls(r.rUplift)}">${f2(r.rUplift)}</td>
                       <td class="${cls(r.rDrift)}">${f2(r.drift * 12)} / ${f2(r.rDrift)}</td><td class="${cls(r.rConn)}">${f2(r.Mtop, 1)} / ${f2(r.rConn, 1)}</td><td>${r.biax ? f2(r.biax.rY1) + ' / ' + f2(r.biax.r3) : '–'}</td></tr>`;
@@ -1243,7 +1292,7 @@
         }
         function effAlpha(res) { if (res.conn && res.conn.type === 'notched') { const r = (res.rows || []).filter(x => x.aL != null); return r.length ? Math.max(...r.map(x => x.aL)) : res.alpha; } return res.alpha; }
         function govTable(res) {
-            const g = res.gov, lbl = { rStruct: 'Structural (NDS 3.9.2 / ASD)', rEmbed: 'Lateral embedment (Broms)', rComp: 'Axial compression (skin + end bearing)', rUplift: 'Uplift / pullout (skin + pile weight)' };
+            const g = res.gov, lbl = { rStruct: 'Structural (NDS 3.9.2 / ASD)', rEmbed: 'Lateral embedment (Broms short pile)', rLatLong: 'Lateral long-pile yield (Broms)', rComp: 'Axial compression (skin + end bearing)', rUplift: 'Uplift / pullout (skin + pile weight)' };
             let t = '<table><tr><th>Check</th><th>Governing ratio</th><th>Combo</th><th>Result</th></tr>';
             Object.keys(lbl).forEach(k => {
                 t += `<tr><td>${lbl[k]}</td><td class="${cls(g[k].ratio)}">${f2(g[k].ratio)}</td><td>${g[k].id}: ${g[k].name}</td><td>${g[k].ratio > 1 ? '❌ FAILS' : '✅ OK'}</td></tr>`;

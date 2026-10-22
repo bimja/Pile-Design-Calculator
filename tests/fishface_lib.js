@@ -13,7 +13,8 @@ const fishFace = {
   localScour: NaN, dragA: NaN, debrisOn: true, debrisW: 1000, topCond: 'braced', KeBr: 1.0,
   soilType: 'clay', suTop: 400, suGrad: 15, suMax: 1500,
   D: 8.0, L: 12.3, Lr: 2.5, Wv: 0, Wh: 3.0,                       // interior pile under the H-PSL post
-  embedMode: 'auto', maxLen: 40, lenMode: 'advisory', minEmbed: 5, maxEmbed: 80, embStep: 0.5
+  embedMode: 'auto', maxLen: 40, lenMode: 'advisory', minEmbed: 5, maxEmbed: 80, embStep: 0.5,
+  MyBasis: 'off'   // R1/R2 package basis: FS lateral 2.0, short-pile Broms only (pre TPC §7.2 long-pile check)
 };
 const perimeter = { D: 5.9, L: 0, Lr: 0, Wv: -4.17, Wh: 3.0 };
 const soft = { suTop: 250, suGrad: 10 };
