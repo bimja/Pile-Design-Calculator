@@ -222,6 +222,35 @@
                 <div><label>Nq override (blank = API RP 2A by φ)</label><input type="number" id="NqOv" value="" step="1"></div>
             </div>
 
+            <h3>Pile Installation Method</h3>
+            <div class="grid2">
+                <div><label>Installation method</label>
+                    <select id="instMethod" onchange="toggleInstOptions()">
+                        <option value="driven" selected>Driven (displacement pile — default)</option>
+                        <option value="pilot">Pre-drilled pilot hole, then driven</option>
+                        <option value="augerSand">Augered, sand / native backfill ("sand-packed")</option>
+                        <option value="augerConcrete">Augered, concrete / grout backfill</option>
+                    </select></div>
+                <div class="instPilot"><label>Pilot hole diameter (in)</label><input type="number" id="instPilotD" value="10" step="1"></div>
+                <div class="instPilot"><label>Pilot hole depth below grade (ft)</label><input type="number" id="instPilotDepth" value="9" step="0.5"></div>
+                <div class="instConc"><label>Augered hole diameter (in; min = pile diagonal + 4")</label><input type="number" id="instHoleD" value="24" step="1"></div>
+            </div>
+            <div id="instWarn" style="font-size:0.85em;color:#b00;"></div>
+            <details id="instAdv"><summary style="cursor:pointer;font-weight:bold">Installation factors (advanced — editable)</summary>
+            <div class="grid2">
+                <div><label>Augered: K for skin friction, compression &amp; tension (at-rest K0 = 1 − sin φ ≈ 0.5)</label><input type="number" id="instK" value="0.5" step="0.05"></div>
+                <div><label>Augered: end-bearing factor (× driven Nq; Meyerhof bored ≈ 1/3)</label><input type="number" id="instFb" value="0.3333" step="0.05"></div>
+                <div><label>Augered sand-packed: lateral soil factor (× Kp)</label><input type="number" id="instLatSand" value="0.67" step="0.05"></div>
+                <div><label>Augered concrete: lateral soil factor (× Kp, on hole width)</label><input type="number" id="instLatConc" value="1.0" step="0.05"></div>
+                <div><label>Pilot then driven: lateral soil factor (× Kp)</label><input type="number" id="instLatPilot" value="0.9" step="0.05"></div>
+                <div><label>Pilot then driven: skin-friction K factor over the pilot depth</label><input type="number" id="instPilotKf" value="0.75" step="0.05"></div>
+                <div><label>Augered concrete: concrete–soil δ (deg; blank = φ, cast-in-place)</label><input type="number" id="instDeltaConc" value="" step="1"></div>
+                <div><label>Augered concrete: concrete / grout unit weight (pcf; buoyant below water)</label><input type="number" id="instConcWt" value="150" step="5"></div>
+                <div><label>Augered concrete: local scour basis (when local scour is blank)</label><select id="instScour"><option value="hole" selected>2 × hole diameter (conservative)</option><option value="pile">2 × pile width (tool default)</option></select></div>
+            </div>
+            <p style="font-size:0.8em;color:#444">Sources / basis: FEMA P-55 Coastal Construction Manual (2011) Vol. II Ch. 13 — "piles dropped or driven into augered holes may not have as much capacity as those driven without augering"; augering suits soil that is "sufficiently clayey or silty"; jetting loosens the soil around and below the pile. FEMA 499 Fact Sheet 12 (2005) — piles "can be driven, augured, or jetted"; the method varies with soil, bearing requirements, equipment and local practice. Kulhawy (1984) — bored/jetted piles K ≈ K0 (driven, displacement K &gt; K0). Meyerhof (1976, ASCE JGED 102(3)) — bored piles in sand: skin friction ≈ ½ and end bearing ≈ ⅓ of driven. Lateral factors (0.67 sand-packed, 0.9 pilot) are engineering judgment. Every factor is a presumptive value for cohesionless soil and does not replace a site geotechnical report. Clay (α method / Broms clay): only the concrete hole perimeter, tip area and weight are applied.</p>
+            </details>
+
             <h3>Timber Column Stability (NDS 3.7)</h3>
             <div class="grid2">
                 <div><label>Depth to fixity below (scoured) grade (ft; blank = 5d)</label><input type="number" id="dfix" value="" step="0.5"></div>
@@ -316,6 +345,13 @@
             if (r && s) { r.style.display = shape === 'square' ? 'none' : 'block'; s.style.display = shape === 'square' ? 'block' : 'none'; }
         }
 
+        function toggleInstOptions() {
+            const el = document.getElementById('instMethod'); if (!el) return;
+            const m = el.value;
+            document.querySelectorAll('.instPilot').forEach(e => e.style.display = m === 'pilot' ? 'block' : 'none');
+            document.querySelectorAll('.instConc').forEach(e => e.style.display = m === 'augerConcrete' ? 'block' : 'none');
+        }
+
         // ---------- helpers ----------
         function numVal(id, def) {
             const el = document.getElementById(id);
@@ -344,6 +380,7 @@
         }
 
         function calculate() {
+            try { const iw = document.getElementById('instWarn'); if (iw) iw.innerHTML = installation(readInputs()).warn.map(w => '⚠ ' + w).join('<br>'); } catch (e) { }
             // Inputs
             let P = parseFloat(document.getElementById('P').value) || 0;      // kips
             let Hx = parseFloat(document.getElementById('Hx').value) || 0;
@@ -487,7 +524,11 @@
                 dTip: numVal('dTip', NaN),
                 embedMode: strVal('embedMode', 'auto') === 'manual' ? 'manual' : 'auto',
                 maxLen: numVal('maxLen', 40), lenMode: strVal('lenMode', 'advisory') === 'hard' ? 'hard' : 'advisory',
-                minEmbed: numVal('minEmbed', 5), maxEmbed: numVal('maxEmbed', 80), embStep: numVal('embStep', 0.5)
+                minEmbed: numVal('minEmbed', 5), maxEmbed: numVal('maxEmbed', 80), embStep: numVal('embStep', 0.5),
+                instMethod: strVal('instMethod', 'driven'), instPilotD: numVal('instPilotD', 10), instPilotDepth: numVal('instPilotDepth', 9),
+                instHoleD: numVal('instHoleD', 24), instK: numVal('instK', 0.5), instFb: numVal('instFb', 1 / 3), instLatSand: numVal('instLatSand', 0.67),
+                instLatConc: numVal('instLatConc', 1.0), instLatPilot: numVal('instLatPilot', 0.9), instPilotKf: numVal('instPilotKf', 0.75),
+                instDeltaConc: numVal('instDeltaConc', NaN), instConcWt: numVal('instConcWt', 150), instScour: strVal('instScour', 'hole')
             };
         }
 
@@ -662,6 +703,41 @@
                      kf: coastal ? 1.5 : 0.75, gw };
         }
 
+        // Installation method (driven default = no change). Returns the factors pileDesign applies.
+        // Sources: FEMA P-55 Vol. II Ch. 13; FEMA 499 FS 12; Kulhawy (1984) K/K0; Meyerhof (1976) bored ½ skin / ⅓ end bearing.
+        function installation(inp) {
+            const m = ['pilot', 'augerSand', 'augerConcrete'].indexOf(inp.instMethod) >= 0 ? inp.instMethod : 'driven';
+            const fin = (x, d) => (isFinite(x) ? x : d);
+            const d = inp.d, diag = inp.shape === 'square' ? d * Math.SQRT2 : d, minHole = diag + 4;
+            const o = { method: m, Kc: inp.Kc, Kt: inp.Kt, NqF: 1, latF: 1, bSoilIn: 0, perFt: 0, tipSf: 0, extraA: 0, gc: 0,
+                        deltaOv: NaN, pilotDepth: 0, pilotKf: 1, scourHole: false, holeD: NaN, minHole, warn: [] };
+            if (m === 'driven') { o.label = 'Driven (displacement pile)'; o.notes = 'Tool defaults: K ' + inp.Kc + ' / ' + inp.Kt + ', Nq by φ, full Broms Kp on pile width.'; return o; }
+            if (m === 'pilot') {
+                o.pilotDepth = Math.max(0, fin(inp.instPilotDepth, 9)); o.pilotKf = fin(inp.instPilotKf, 0.75); o.latF = fin(inp.instLatPilot, 0.9);
+                const pd = fin(inp.instPilotD, 10);
+                o.label = `Pre-drilled ${pd}" pilot hole to ${o.pilotDepth} ft, then driven`;
+                o.notes = `Skin K × ${o.pilotKf} over the top ${o.pilotDepth} ft (partial displacement), full driven K below; driven tip (Nq unchanged); lateral Kp × ${o.latF}.`;
+                if (pd >= Math.min(d, inp.d)) o.warn.push(`Pilot hole ${pd}" is not smaller than the ${d}" pile — this is an augered hole, not a pilot; use an augered method.`);
+                return o;
+            }
+            o.Kc = o.Kt = fin(inp.instK, 0.5); o.NqF = fin(inp.instFb, 1 / 3);
+            if (m === 'augerSand') {
+                o.latF = fin(inp.instLatSand, 0.67);
+                o.label = 'Augered, sand / native backfill';
+                o.notes = `Skin K = ${o.Kc} (≈ K0, compression and tension); end bearing × ${f2(o.NqF, 3)} (auger-disturbed tip); lateral Kp × ${o.latF} (loose backfill placed under water). No field capacity verification without blow counts.`;
+                return o;
+            }
+            const hD = fin(inp.instHoleD, minHole);
+            o.holeD = hD; o.bSoilIn = Math.max(hD, d); o.perFt = Math.PI * o.bSoilIn / 12; o.tipSf = Math.PI * o.bSoilIn * o.bSoilIn / 4 / 144;
+            const Ap = inp.shape === 'square' ? d * d / 144 : Math.PI * d * d / 4 / 144;
+            o.extraA = Math.max(0, o.tipSf - Ap); o.gc = fin(inp.instConcWt, 150) / 1000; o.latF = fin(inp.instLatConc, 1.0);
+            o.deltaOv = fin(inp.instDeltaConc, inp.phi); o.scourHole = inp.instScour !== 'pile';
+            o.label = `Augered ${hD}" hole, concrete / grout backfill`;
+            o.notes = `Concrete–soil interface: K = ${o.Kc}, δ = ${o.deltaOv}°, perimeter π·${o.bSoilIn}" = ${f2(o.perFt)} ft; end bearing on ${f2(o.tipSf)} sf × ${f2(o.NqF, 3)} Nq; lateral Kp × ${o.latF} on ${o.bSoilIn}" width; concrete annulus ${f2(o.extraA)} sf at ${f2(o.gc * 1000, 0)} pcf (buoyant below water) added to self-weight${o.scourHole ? '; local scour 2 × hole diameter when not entered' : ''}. Place by tremie / pump from the bottom up.`;
+            if (hD < minHole - 1e-9) o.warn.push(`Hole ${hD}" is smaller than the minimum ${f2(minHole, 1)}" (pile ${inp.shape === 'square' ? 'diagonal ' + f2(diag, 1) + '"' : 'diameter ' + d + '"'} + 4"). The pile will not fit with cover; increase the hole diameter.`);
+            return o;
+        }
+
         // Main engine — pure function of the input object
         function pileDesign(inp) {
             const b = inp.d;                               // in (butt diameter for a tapered round pile)
@@ -675,12 +751,15 @@
             const gm = inp.gammaM / 1000;
             const phiR = inp.phi * Math.PI / 180;
             const Kp = (1 + Math.sin(phiR)) / (1 - Math.sin(phiR));
-            const delta = isNaN(inp.delta) ? inp.phi - 5 : inp.delta;
+            const inst = installation(inp);
+            const KpL = Kp * inst.latF;                                        // installation lateral factor (sand Broms)
+            const bS = () => (inst.bSoilIn > 0 ? inst.bSoilIn / 12 : bft);     // soil-bearing width (concrete hole)
+            const delta = isFinite(inst.deltaOv) ? inst.deltaOv : (isNaN(inp.delta) ? inp.phi - 5 : inp.delta);
             const tanD = Math.tan(delta * Math.PI / 180);
             const api = apiSand(inp.phi);
-            const Nq = isNaN(inp.NqOv) ? api.Nq : inp.NqOv;
+            const Nq = (isNaN(inp.NqOv) ? api.Nq : inp.NqOv) * inst.NqF;
             const gp = (isNaN(inp.pileUnitWt) ? (inp.pileType === 'concrete' ? 150 : 50) : inp.pileUnitWt) / 1000;
-            const flood = floodLoads(inp);
+            const flood = floodLoads(inst.scourHole && isNaN(inp.localScour) ? Object.assign({}, inp, { localScour: 2 * inst.bSoilIn / 12 }) : inp);
             const tim = inp.pileType === 'timber' ? timberRef(inp) : null;
             const fcp = inp.fc_prime;
             const dfix = isNaN(inp.dfix) ? 5 * bft : inp.dfix;
@@ -750,7 +829,7 @@
                         const c = su(z, drop), psi = c / Math.max(sig(z, submerged), 1e-6);
                         const al = Math.min(1, psi <= 1 ? 0.5 / Math.sqrt(psi) : 0.5 / Math.pow(psi, 0.25));
                         Q += al * c * geo.perAt(z) * dz;
-                    } else Q += Math.min(K * sig(z, submerged) * tanD, api.fslim) * geo.perAt(z) * dz;
+                    } else Q += Math.min((z < inst.pilotDepth ? K * inst.pilotKf : K) * sig(z, submerged) * tanD, api.fslim) * geo.perAt(z) * dz;
                 }
                 return Q;
             }
@@ -789,9 +868,9 @@
                 const e = M0 / H;
                 let Lreq = 80;
                 for (let L = 0.5; L <= 80; L += 0.05) {
-                    if (0.5 * gs * bft * Math.pow(L, 3) * Kp / (e + L) >= FS * H) { Lreq = L; break; }
+                    if (0.5 * gs * bS() * Math.pow(L, 3) * KpL / (e + L) >= FS * H) { Lreq = L; break; }
                 }
-                const f = 0.82 * Math.sqrt(H / (gs * bft * Kp));      // depth to max moment
+                const f = 0.82 * Math.sqrt(H / (gs * bS() * KpL));      // depth to max moment
                 return { H, M0, e, Lreq, f, Mmax: H * (e + 0.67 * f) };
             }
 
@@ -801,7 +880,7 @@
                 if (clay) return bromsClayL(V, M, FS, drop);
                 V = Math.abs(V); M = Math.abs(M);
                 if (V < 1e-9 && M < 1e-9) return 0;
-                for (let L = 0.5; L <= 80; L += 0.05) if (0.5 * gs * bft * Math.pow(L, 3) * Kp >= FS * (V * L + M)) return L;
+                for (let L = 0.5; L <= 80; L += 0.05) if (0.5 * gs * bS() * Math.pow(L, 3) * KpL >= FS * (V * L + M)) return L;
                 return 80;
             }
             // ---- Broms short / long / intermediate (TPC Manual 2016 §7.2, pp.55-63) ----
@@ -810,14 +889,14 @@
             function bisectLam(g) { let lo = 0, hi = 1; while (g(hi) < 0 && hi < 1e6) hi *= 2; for (let i = 0; i < 40; i++) { const m = (lo + hi) / 2; if (g(m) < 0) lo = m; else hi = m; } return hi; }
             function lamShort(V, M, L, drop) {
                 V = Math.abs(V); M = Math.abs(M); if (V < 1e-9 && M < 1e-9) return Infinity; if (L <= 0) return 0;
-                if (!clay) return 0.5 * gs * bft * Kp * Math.pow(L, 3) / (V * L + M);              // Fig. 7-3: moments about the toe
+                if (!clay) return 0.5 * gs * bS() * KpL * Math.pow(L, 3) / (V * L + M);              // Fig. 7-3: moments about the toe
                 return bisectLam(l => (bromsClayL(l * V, l * M, 1, drop) >= L ? 1 : -1));        // Fig. 7-1: 9cu·b, top 1.5b ignored
             }
             function lamLong(V, M, My, drop) {
                 V = Math.abs(V); M = Math.abs(M); if (V < 1e-9 && M < 1e-9) return Infinity;
                 const cu = clay ? su(1.5 * bft + 2, drop) : 0;
                 const Mmax = l => clay ? l * M + l * V * (1.5 * bft + 0.5 * l * V / (9 * cu * bft))        // Fig. 7-2
-                                       : l * M + l * V * 0.67 * 0.82 * Math.sqrt(l * V / (gs * bft * Kp)); // Fig. 7-4 (f = 0.82√(Q/γbKp))
+                                       : l * M + l * V * 0.67 * 0.82 * Math.sqrt(l * V / (gs * bS() * KpL)); // Fig. 7-4 (f = 0.82√(Q/γbKp))
                 return bisectLam(l => Mmax(l) - My);
             }
             function latCapacity(V, M, Lav, drop, spC, Esw, FbP, isF) {
@@ -904,9 +983,9 @@
                     dScour = dAt(top);
                     spC = sectionProps('round', dScour);      // bending / stability / lateral at the scour line
                     Aavg = Math.PI / 4 * (b * b + b * inp.dTip + inp.dTip * inp.dTip) / 3 / 144;
-                    geo = { perAt: z => Math.PI * dAt(top + z) / 12, Atip: Math.PI * inp.dTip * inp.dTip / 4 / 144 };
+                    geo = inst.perFt > 0 ? { perAt: () => inst.perFt, Atip: inst.tipSf } : { perAt: z => Math.PI * dAt(top + z) / 12, Atip: Math.PI * inp.dTip * inp.dTip / 4 / 144 };
                     bft = dScour / 12;
-                } else geo = { perAt: () => perft, Atip: Aft };
+                } else geo = inst.perFt > 0 ? { perAt: () => inst.perFt, Atip: inst.tipSf } : { perAt: () => perft, Atip: Aft };
                 // effective fixity: notched connection => spring α = kL/(EI + kL); otherwise the input α
                 const EIc = Esw * spC.I / 1000 / 144;
                 const aL = (sway && conn.type === 'notched') ? conn.kRot * (top + dfix) / (EIc + conn.kRot * (top + dfix)) : alpha;
@@ -968,7 +1047,8 @@
                 // pile self weight (buoyant below water)
                 const wl = isF ? Ltip + Math.max(0, flood.Esw - flood.G) : Math.max(0, Ltip - inp.dw);
                 const Lsub = Math.min(Ltot, wl);
-                const Wp = Aavg * (gp * (Ltot - Lsub) + (gp - 0.064) * Lsub);
+                const LcSub = Math.min(Ltip, wl);                // concrete annulus (augered concrete) over the embedded length
+                const Wp = Aavg * (gp * (Ltot - Lsub) + (gp - 0.064) * Lsub) + inst.extraA * (inst.gc * (Ltip - LcSub) + (inst.gc - 0.064) * LcSub);
                 const fD = c.user ? 1 : c.fD;
                 const Pc = P + fD * Wp;
 
@@ -1074,7 +1154,7 @@
                     }
                 }
                 // geotechnical
-                const Qs_c = skin(Lav, inp.Kc, isF, drop), Qb = endBearing(Lav, isF, drop), Qs_t = skin(Lav, inp.Kt, isF, drop);
+                const Qs_c = skin(Lav, inst.Kc, isF, drop), Qb = endBearing(Lav, isF, drop), Qs_t = skin(Lav, inst.Kt, isF, drop);
                 const Qa_c = (Qs_c + Qb) / inp.FSc, Qa_t = Qs_t / inp.FSt;
                 const T = Pc < 0 ? -Pc : 0;
                 return {
@@ -1097,7 +1177,7 @@
                 rows.forEach(r => { if (r[k] > best[k]) best = r; });
                 gov[k] = { ratio: best[k], id: best.id, name: best.name };
             });
-            return { sp, taper, Kp, delta, api, Nq, gp, flood, tim, dfix, rows, gov, pw, bracedG, braceFoot: bf, sway, alpha, KeFix, conn, driftN, Esw,
+            return { sp, taper, Kp, inst, delta, api, Nq, gp, flood, tim, dfix, rows, gov, pw, bracedG, braceFoot: bf, sway, alpha, KeFix, conn, driftN, Esw,
                      tipUsed: isNaN(inp.Ltip) ? tipDesign : inp.Ltip, tipGiven: !isNaN(inp.Ltip),
                      tipReqMax: Math.max.apply(null, rows.map(r => r.tipReq)), comps };
         }
@@ -1318,7 +1398,8 @@
             let h = `<h2>Advanced Checks — ASCE 7-22 ASD Combinations</h2>
                 <p>Section ${inp.shape} ${inp.d}": A ${f2(res.sp.A, 1)} in², S ${f2(res.sp.S, 1)} in³, I ${f2(res.sp.I, 0)} in⁴, perimeter ${f2(res.sp.per, 1)} in.
                 ${t ? t.name + ': Fb ' + t.Fb + ', Fc ' + t.Fc + ', Emin ' + t.Emin + ' psi; CM(Fc) ' + t.CM_Fc + ', CF(Fb) ' + f2(t.CF_Fb, 3) + (t.Cu_Fc ? ', Cu ' + t.Cu_Fc + ', Cls ' + t.Cls_Fc + '/' + t.Cls_Fb : '') + ', Ct ' + inp.Ct + ', Ke ' + inp.Ke + ', fixity ' + f2(res.dfix, 1) + ' ft.' : 'Concrete (preliminary ASD).'}
-                Soil: ${inp.soilType === 'clay' ? 'CLAY su ' + inp.suTop + ' psf + ' + inp.suGrad + ' psf/ft (cap ' + inp.suMax + '), α method, 9su end bearing, Broms clay; ' : ''}Kp ${f2(res.Kp)}, δ ${res.delta}°, Nq ${res.Nq}, f<sub>s,lim</sub> ${res.api.fslim} ksf, q<sub>lim</sub> ${res.api.qlim} ksf. Pile tip ${f2(res.tipUsed, 1)} ft below grade (${res.tipSource || (res.tipGiven ? 'input' : 'required, design mode')}); max required tip ${f2(res.tipReqMax, 1)} ft.</p>`;
+                Soil: ${inp.soilType === 'clay' ? 'CLAY su ' + inp.suTop + ' psf + ' + inp.suGrad + ' psf/ft (cap ' + inp.suMax + '), α method, 9su end bearing, Broms clay; ' : ''}Kp ${f2(res.Kp)}, δ ${res.delta}°, Nq ${f2(res.Nq, 2)}, f<sub>s,lim</sub> ${res.api.fslim} ksf, q<sub>lim</sub> ${res.api.qlim} ksf. Pile tip ${f2(res.tipUsed, 1)} ft below grade (${res.tipSource || (res.tipGiven ? 'input' : 'required, design mode')}); max required tip ${f2(res.tipReqMax, 1)} ft.</p>`;
+            if (res.inst) h += `<p><strong>Installation method: ${res.inst.label}.</strong> ${res.inst.notes}</p>` + res.inst.warn.map(w => `<p class="fail">⚠ ${w}</p>`).join('');
             if (inp.topCond === 'braced') {
                 const mx = res.rows.reduce((a, r) => Math.max(a, (r.Rtop || 0) + (r.Wtop || 0)), 0);
                 h += `<p><strong>Braced to grade:</strong> pile top pinned at the floor framing; braces land ${f2(res.braceFoot, 1)} ft above grade. Above grade the pile is a propped cantilever (fixed ${f2(res.dfix, 1)} ft below scour line) under flood + pile wind; le = ${inp.KeBr} × (scour line to framing). The building wind share (${f2(inp.Wh)} k strength) and the prop reaction (max ${f2(mx)} k incl. wind) return through the braces to the brace foot, so the soil check (Broms, FS ${inp.FSlat}) and the below-grade bending use ALL lateral loads, with the wind share applied at the brace foot. Bending ratio uses max(above-grade propped moment, below-grade Broms moment).</p>`;
@@ -1342,7 +1423,8 @@
                 ['User P / Hx / Hy (single case)', [inp.P, inp.Hx, inp.Hy].join(' / ') + ' kips'],
                 ['Soil type', inp.soilType === 'clay' ? `Clay: su ${inp.suTop} psf + ${inp.suGrad} psf/ft, cap ${inp.suMax} psf (α method, 9su, Broms clay)` : 'Sand (β method, Nq, Broms sand)'],
                 ["Soil γ' / γm / φ / δ / dw", `${inp.gammaEff} pcf / ${inp.gammaM} pcf / ${inp.phi}° / ${res.delta}° / ${inp.dw} ft`],
-                ['K comp / K tension / Nq', `${inp.Kc} / ${inp.Kt} / ${res.Nq}`],
+                ['Installation method', res.inst ? `<strong>${res.inst.label}</strong> — ${res.inst.notes}${res.inst.warn.length ? ' <span style="color:#b00">⚠ ' + res.inst.warn.join(' ') + '</span>' : ''}` : 'Driven'],
+                ['K comp / K tension / Nq', `${res.inst ? res.inst.Kc : inp.Kc} / ${res.inst ? res.inst.Kt : inp.Kt} / ${f2(res.Nq, 2)}`],
                 ['FS comp / uplift / lateral', `${inp.FSc} / ${inp.FSt} / ${inp.FSlat}`],
                 ['Pile tip below grade', `${f2(res.tipUsed, 1)} ft (${res.tipSource || (res.tipGiven ? 'input' : 'design')})`],
                 ['Round pile taper', res.taper ? `butt ${inp.d}" → tip ${inp.dTip}" (bending/lateral at scour-line diameter, skin by local perimeter, end bearing on tip area)` : 'uniform'],
@@ -1366,13 +1448,15 @@
                 <li>Sway frame: fixed-guided column (top moment F c²/2L per load), NDS App. G Ke (2.1 free / 1.2 rotation fixed, translation free), P-delta 1/(1 − P/Pe); drift limit h/N (default h/100 at ASD, ≈ h/200 at 10-yr service wind per ASCE 7 App. CC pressure ratio ≈ 0.47).</li><li>AWC NDS 2018: §3.7 column stability Cp, §3.9.2 combined bending + compression, Table 4D sawn timbers, Table 6A round piles, CD per Table 2.3.2.</li>
                 <li>Broms (1964) lateral resistance of piles in cohesionless soil (short free-head pile; max moment depth 0.82√(H/γ'DKp)).</li>
                 <li>API RP 2A-WSD §6.4.2 α method for clay (α = 0.5ψ^-0.5 / 0.5ψ^-0.25), end bearing 9su; Broms (1964) lateral resistance in cohesive soil (9suD, top 1.5D neglected).</li>
-                <li>API RP 2A-WSD Table 6.4.3-1 limiting skin friction and end bearing for sand; β = K·tanδ effective-stress method.</li></ul>
+                <li>API RP 2A-WSD Table 6.4.3-1 limiting skin friction and end bearing for sand; β = K·tanδ effective-stress method.</li>
+                ${res.inst && res.inst.method !== 'driven' ? '<li>Installation method: FEMA P-55 (2011) Vol. II Ch. 13 (augered / jetted piles have less capacity than driven); FEMA 499 Fact Sheet 12 (2005); Kulhawy (1984) K ≈ K0 for bored / jetted piles; Meyerhof (1976) bored piles ≈ ½ skin friction and ⅓ end bearing of driven. Lateral factors are engineering judgment, editable in the Installation factors section.</li>' : ''}</ul>
                 <p style="font-size:9pt"><strong>PRELIMINARY.</strong> Loads per pile are user-supplied. Geotechnical values assumed without site borings. Review and seal by a licensed engineer required.</p>`;
         }
 
         // Run once on load with defaults
         window.onload = function() {
             togglePileOptions();
+            toggleInstOptions();
             calculate();
         };
     </script>
