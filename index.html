@@ -47,7 +47,8 @@
     <div class="container">
       <div class="no-print">
         <h1>🌊 Coastal Home Pile Design Calculator</h1>
-        <p style="text-align:center; font-style:italic;">Preliminary tool for elevated coastal homes • Galveston, TX coast defaults • Based on Broms lateral method (sand) + ASD stresses</p>
+        <p style="text-align:center; font-style:italic;">Preliminary tool for elevated coastal homes • Galveston, TX coast defaults • Based on Broms lateral method (TPC Manual §7.2, sand &amp; clay) + ASD stresses</p>
+        <p id="toolVersion" style="text-align:center; font-size:0.8em; color:#666;">Version 2026-11-19 (installation method, TPC Broms FS 2.5)</p>
         
         <h2>Input Parameters</h2>
         
@@ -324,17 +325,19 @@
         <div class="note no-print">
             <strong>Notes &amp; Limitations:</strong><br>
             • Tributary loads are per pile. The optional Building Wind Helper fills the per-pile wind share Wh, overturning axial Wot and pile qz (ASCE 7-22 directional); manual entry still works.<br>
-            • Lateral capacity uses Broms method (free-head pile in cohesionless sand).<br>
+            • Lateral capacity uses Broms (1964) per Timber Pile Design &amp; Construction Manual §7.2: short / long pile in sand or clay; top condition per input (free, braced to grade, or sway frame).<br>
+            • Installation method (driven, pilot hole then driven, augered sand-packed, augered concrete) adjusts skin friction, end bearing and lateral soil resistance by editable factors; it is printed on the calc sheet.<br>
             • Structural check: combined axial + bending (ASD).<br>
             • Timber: Wet service values.<br>
             • Concrete: Preliminary ASD (Fc ≈ 0.33 f'c, Fb conservative). For reinforced piles, consult engineer.<br>
-            • FS = 2.0 on lateral capacity. Add scour/erosion allowance (typically 2–4 ft or 2.5×diameter per FEMA).<br>
+            • FS lateral default 2.5 (TPC Manual §7.2 Step 10), editable. Add scour/erosion allowance (typically 2–4 ft or 2.5×diameter per FEMA).<br>
             • Advanced section: ASCE 7-22 §2.4 ASD combos, §5.4 flood loads, FEMA P-55 scour/debris, NDS 2018 Ch. 3/4/6 timber factors, API RP 2A sand skin friction/end bearing limits. Uplift and compression geotechnical capacities are static estimates without site borings.<br>
             • This is a preliminary calculator only. Always consult a licensed structural/geotechnical engineer and site-specific soil borings.
         </div>
     </div>
 
     <script>
+        const TOOL_VERSION = '2026-11-19 (installation method, TPC Broms FS 2.5)';
         function togglePileOptions() {
             const pileType = document.getElementById('pileType').value;
             const shapeEl = document.getElementById('shape');
@@ -1436,7 +1439,7 @@
                 ['Flood zone / BFE / grade', `${inp.zone} / ${f2(inp.BFE, 2)} / ${f2(inp.G, 2)} ft`]
             ].map(r => `<tr><td style="text-align:left">${r[0]}</td><td style="text-align:left">${r[1]}</td></tr>`).join('');
             return `<h1 style="color:black">PRELIMINARY — Pile Design Calculation</h1>
-                <p><strong>Project:</strong> ${inp.projName || '(unnamed)'} &nbsp; <strong>Date:</strong> ${now.toLocaleDateString()} &nbsp; <strong>Status:</strong> PRELIMINARY — not for construction</p>
+                <p><strong>Project:</strong> ${inp.projName || '(unnamed)'} &nbsp; <strong>Date:</strong> ${now.toLocaleDateString()} &nbsp; <strong>Status:</strong> PRELIMINARY — not for construction &nbsp; <strong>Tool version:</strong> ${TOOL_VERSION}</p>
                 <h2>Inputs</h2><table><tr><th>Item</th><th>Value</th></tr>${inRows}</table>
                 ${pack ? renderEmbedPanel(inp, pack) : ''}
                 <h2>Governing Results</h2>${govTable(res)}
